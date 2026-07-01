@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,22 @@ import (
 	"manygit/internal/discover"
 	"manygit/internal/git"
 )
+
+var ansiSeq = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSI(s string) string { return ansiSeq.ReplaceAllString(s, "") }
+
+// isASCII reports whether s is pure ASCII (every rune < 128). Decorative UI
+// glyphs must be ASCII so ambiguous-East-Asian-width terminals render them
+// exactly one cell wide and columns never drift.
+func isASCII(s string) bool {
+	for _, r := range s {
+		if r > 127 {
+			return false
+		}
+	}
+	return true
+}
 
 func gitCmd(t *testing.T, dir string, args ...string) {
 	t.Helper()
@@ -101,11 +118,13 @@ func TestTUI_SpaceSelectsRepo(t *testing.T) {
 		return bytes.Contains(b, []byte("alpha"))
 	}, teatest.WithDuration(3*time.Second))
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
-	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
-		return bytes.Contains(b, []byte("✔"))
-	}, teatest.WithDuration(3*time.Second))
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
-	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	// Assert on settled model state (deterministic) rather than scraping for a
+	// marker glyph. Cursor starts at 0 → the alphabetically-first repo.
+	fm := tm.FinalModel(t, teatest.WithFinalTimeout(3*time.Second)).(Model)
+	if !fm.selected[fm.repos[0].repo.Path] {
+		t.Errorf("expected repos[0] selected after space; selected=%v", fm.selected)
+	}
 }
 
 func TestTUI_FilterNarrowsList(t *testing.T) {
@@ -148,7 +167,7 @@ func TestTUI_SyncSkipsDirtyRepo(t *testing.T) {
 	}
 	tm := teatest.NewTestModel(t, New(cfg, repos), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
-		return bytes.Contains(b, []byte("●1"))
+		return bytes.Contains(b, []byte("*1"))
 	}, teatest.WithDuration(3*time.Second))
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
@@ -208,6 +227,67 @@ func TestTUI_RepoRowsFitPanelContent(t *testing.T) {
 			}
 			if got := lipgloss.Width(line); got > content {
 				t.Errorf("w=%d: repo-body line width %d exceeds panel content %d: %q", w, got, content, line)
+			}
+		}
+	}
+}
+
+// Decorative glyphs must be ASCII (guaranteed width-1). Ambiguous-East-Asian
+// glyphs (▸ ● ↑ ↓ ⇕ ✓ ✔ …) render 2 cells wide in many terminals while
+// lipgloss measures them as 1, which drifts columns — most visibly on the
+// highlighted row. This guards against reintroducing them.
+func TestTUI_DecorativeGlyphsAreASCII(t *testing.T) {
+	states := []*repoVM{
+		{loaded: false},
+		{loaded: true, fetching: true},
+		{loaded: true, status: git.RepoStatus{HasUpstream: false}},
+		{loaded: true, status: git.RepoStatus{HasUpstream: true, Ahead: 2}},
+		{loaded: true, status: git.RepoStatus{HasUpstream: true, Behind: 5}},
+		{loaded: true, status: git.RepoStatus{HasUpstream: true, Ahead: 1, Behind: 3}},
+		{loaded: true, status: git.RepoStatus{HasUpstream: true}},
+	}
+	for i, r := range states {
+		if g := stripANSI(syncGlyph(r)); !isASCII(g) {
+			t.Errorf("syncGlyph[%d] = %q is not ASCII", i, g)
+		}
+	}
+	if g := stripANSI(dirtyBadge(git.RepoStatus{DirtyCount: 3})); !isASCII(g) {
+		t.Errorf("dirtyBadge = %q is not ASCII", g)
+	}
+	// cursor prefix + selection marker via a rendered highlighted+selected row
+	cfg, repos := twoRepos(t)
+	m := New(cfg, repos)
+	m.selected[m.repos[0].repo.Path] = true
+	if row := stripANSI(m.renderRow(0, m.repos[0], 12)); !isASCII(row) {
+		t.Errorf("renderRow (cursor+selected) = %q is not ASCII", row)
+	}
+}
+
+// The three panels must display their number so the 1/2/3 focus keys are
+// discoverable.
+func TestTUI_PanelsShowNumbers(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos), 120, 40)
+	view := stripANSI(m.View())
+	for _, want := range []string{"1 Repos", "2 Branches", "3 Log"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("View missing panel label %q", want)
+		}
+	}
+}
+
+// Branch and log panel lines must be truncated to the panel content width so
+// long branch names / commit lines can't wrap and grow the panel off-axis.
+func TestTUI_PanelLinesFitContentWidth(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos), 100, 30)
+	m.branches = []git.Branch{{Name: strings.Repeat("b", 300)}}
+	m.log = []string{strings.Repeat("x", 300)}
+	content := computeDims(100, 30).rightW - 2
+	for _, block := range []string{m.renderBranches(content), m.renderLog(content)} {
+		for _, line := range strings.Split(block, "\n") {
+			if got := lipgloss.Width(line); got > content {
+				t.Errorf("panel line width %d exceeds content %d: %q", got, content, line)
 			}
 		}
 	}
