@@ -25,6 +25,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.filtering {
+		return m.handleFilterKey(msg)
+	}
 	vis := m.visibleRepos()
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -45,6 +48,43 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cursor > 0 {
 			m.cursor--
 		}
+	case " ":
+		if r := m.currentVisible(vis); r != nil {
+			m.selected[r.repo.Path] = !m.selected[r.repo.Path]
+		}
+	case "a":
+		allSel := len(vis) > 0
+		for _, r := range vis {
+			if !m.selected[r.repo.Path] {
+				allSel = false
+				break
+			}
+		}
+		for _, r := range vis {
+			m.selected[r.repo.Path] = !allSel
+		}
+	case "/":
+		m.filtering = true
+	}
+	return m, nil
+}
+
+func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.filtering = false
+		m.filter = ""
+		m.cursor = 0
+	case tea.KeyEnter:
+		m.filtering = false
+	case tea.KeyBackspace:
+		if len(m.filter) > 0 {
+			m.filter = m.filter[:len(m.filter)-1]
+		}
+		m.cursor = 0
+	case tea.KeyRunes:
+		m.filter += string(msg.Runes)
+		m.cursor = 0
 	}
 	return m, nil
 }

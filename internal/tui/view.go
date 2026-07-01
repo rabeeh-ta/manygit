@@ -60,8 +60,20 @@ func clampLines(s string, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
-// visibleRepos is the display list (all repos in Task 7; filtered in Task 8).
-func (m Model) visibleRepos() []*repoVM { return m.repos }
+// visibleRepos returns repos matching the current filter (all if empty).
+func (m Model) visibleRepos() []*repoVM {
+	if m.filter == "" {
+		return m.repos
+	}
+	needle := strings.ToLower(m.filter)
+	var out []*repoVM
+	for _, r := range m.repos {
+		if strings.Contains(strings.ToLower(r.repo.Name), needle) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
 
 // currentVisible is the highlighted repo within the visible slice.
 func (m Model) currentVisible(vis []*repoVM) *repoVM {
@@ -108,11 +120,21 @@ func (m Model) footer() string {
 		"space select · s sync · p push · b checkout · o open · r refetch · ? help · q quit")
 }
 
+func (m Model) statusOrFilterLine() string {
+	if m.filtering {
+		return styleYellow.Render("/" + m.filter + "▏")
+	}
+	if m.statusLine != "" {
+		return m.statusLine
+	}
+	return m.footer()
+}
+
 func (m Model) View() string {
 	d := computeDims(m.width, m.height)
 	title := styleTitle.Render("manygit") + "  " +
-		styleDim.Render(fmt.Sprintf("%d repos", len(m.repos)))
+		styleDim.Render(fmt.Sprintf("%d repos · %d selected", len(m.repos), len(m.selected)))
 	left := panelStyle(d.leftW, d.bodyH, m.focus == panelRepos).
 		Render(clampLines(m.renderRepoBody(d), d.bodyH))
-	return lipgloss.JoinVertical(lipgloss.Left, title, "", left, m.footer())
+	return lipgloss.JoinVertical(lipgloss.Left, title, "", left, m.statusOrFilterLine())
 }
