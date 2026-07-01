@@ -121,9 +121,15 @@ func (m Model) currentVisible(vis []*repoVM) *repoVM {
 func (m Model) renderRow(idx int, r *repoVM, nameW int) string {
 	cursor := "  "
 	nameStyle := lipgloss.NewStyle().Width(nameW)
-	if m.focus == panelRepos && idx == m.cursor {
-		cursor = styleCursor.Render("> ")
-		nameStyle = nameStyle.Foreground(borderAccent).Bold(true)
+	if idx == m.cursor {
+		// Always mark the cursor repo so you can tell which repo the Branches/Log
+		// panels belong to; highlight it only when the Repos panel is focused.
+		if m.focus == panelRepos {
+			cursor = styleCursor.Render("> ")
+			nameStyle = nameStyle.Foreground(borderAccent).Bold(true)
+		} else {
+			cursor = styleDim.Render("> ")
+		}
 	}
 	mark := " "
 	if m.selected[r.repo.Path] {
@@ -193,7 +199,55 @@ func (m Model) statusOrFilterLine() string {
 	return m.footer()
 }
 
+// helpView renders a full-screen help overlay: keybindings and the status
+// legend (what ^N / vN / *N / ok mean).
+func (m Model) helpView() string {
+	row := func(left, desc string) string {
+		return "  " + lipgloss.NewStyle().Width(14).Render(left) + styleDim.Render(desc)
+	}
+	lines := []string{
+		styleTitle.Render("manygit — help"),
+		"",
+		styleGroup.Render("Panels & navigation"),
+		row("1 / 2 / 3", "focus the Repos / Branches / Log panel"),
+		row("tab", "cycle panels"),
+		row("j / k", "move within the FOCUSED panel"),
+		row("/", "filter repos by name (esc clears)"),
+		"",
+		styleGroup.Render("Selection & actions") + styleDim.Render("  — apply to selected repos, or the cursor repo if none selected"),
+		row("space", "select / deselect the current repo   (x = selected)"),
+		row("s", "sync: fetch + pull --ff-only   (dirty repos skipped)"),
+		row("p", "push"),
+		row("f / r", "fetch current repo / refetch all"),
+		row("b / enter", "checkout the selected branch (focus the Branches panel first)"),
+		row("o", "open the current repo in your editor"),
+		"",
+		styleGroup.Render("Status column"),
+		row(styleGreen.Render("ok"), "up to date with its upstream"),
+		row(styleYellow.Render("^N"), "ahead N — you have commits to PUSH"),
+		row(styleCyan.Render("vN"), "behind N — commits available to PULL"),
+		row(styleMagenta.Render("^N vM"), "diverged (N ahead, M behind)"),
+		row(styleOrange.Render("*N"), "N files changed (dirty working tree)"),
+		row(styleDim.Render("~ / ."), "fetching / loading"),
+		row(styleRed.Render("!"), "no upstream, or error"),
+		"",
+		styleDim.Render("  ? or esc  close help        q  quit"),
+	}
+	tw, th := m.width, m.height
+	if tw <= 0 {
+		tw = minTermW
+	}
+	if th <= 0 {
+		th = minTermH
+	}
+	box := panelStyle(tw-2, th-2, true).Render(clampLines(strings.Join(lines, "\n"), th-2))
+	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
+}
+
 func (m Model) View() string {
+	if m.showHelp {
+		return m.helpView()
+	}
 	d := computeDims(m.width, m.height)
 	title := styleTitle.Render("manygit") + "  " +
 		styleDim.Render(fmt.Sprintf("%d repos, %d selected", len(m.repos), len(m.selected)))

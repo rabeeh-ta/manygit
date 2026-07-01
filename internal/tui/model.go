@@ -35,6 +35,7 @@ type Model struct {
 	selected     map[string]bool
 	filter       string
 	filtering    bool
+	showHelp     bool
 	branches     []git.Branch
 	branchCursor int
 	log          []string

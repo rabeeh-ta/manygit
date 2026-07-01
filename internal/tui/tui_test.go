@@ -292,3 +292,42 @@ func TestTUI_PanelLinesFitContentWidth(t *testing.T) {
 		}
 	}
 }
+
+// In the Branches panel, j/k must move the branch cursor — NOT the repo cursor
+// (which would reload the panels and make branches "change on every keystroke").
+func TestTUI_BranchNavIsPanelScoped(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos), 100, 30)
+	m.branches = []git.Branch{{Name: "a"}, {Name: "b"}, {Name: "c"}}
+	m.focus = panelBranches
+	startRepo := m.cursor
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = mm.(Model)
+	if m.branchCursor != 1 {
+		t.Errorf("branchCursor after j in Branches panel = %d, want 1", m.branchCursor)
+	}
+	if m.cursor != startRepo {
+		t.Errorf("repo cursor moved (%d→%d) while browsing branches", startRepo, m.cursor)
+	}
+}
+
+// ? opens a help overlay explaining the status glyphs and keys; any other key closes it.
+func TestTUI_HelpOverlay(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos), 100, 30)
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = mm.(Model)
+	if !m.showHelp {
+		t.Fatal("? should open the help overlay")
+	}
+	v := stripANSI(m.View())
+	for _, want := range []string{"PUSH", "PULL", "dirty", "select", "sync"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("help overlay missing %q", want)
+		}
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if mm.(Model).showHelp {
+		t.Error("esc should close help")
+	}
+}

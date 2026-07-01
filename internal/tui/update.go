@@ -88,10 +88,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.filtering {
 		return m.handleFilterKey(msg)
 	}
+	if m.showHelp {
+		if s := msg.String(); s == "q" || s == "ctrl+c" {
+			return m, tea.Quit
+		}
+		m.showHelp = false // any other key dismisses help
+		return m, nil
+	}
 	vis := m.visibleRepos()
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
+	case "?":
+		m.showHelp = true
 	case "1":
 		m.focus = panelRepos
 	case "2":
@@ -101,14 +110,30 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "tab":
 		m.focus = (m.focus + 1) % 3
 	case "down", "j":
-		if m.cursor < len(vis)-1 {
-			m.cursor++
-			return m, m.loadContextCmd()
+		// Navigate within the FOCUSED panel (repos vs. branches), so browsing
+		// branches doesn't move the repo cursor and reload the panels.
+		switch m.focus {
+		case panelRepos:
+			if m.cursor < len(vis)-1 {
+				m.cursor++
+				return m, m.loadContextCmd()
+			}
+		case panelBranches:
+			if m.branchCursor < len(m.branches)-1 {
+				m.branchCursor++
+			}
 		}
 	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-			return m, m.loadContextCmd()
+		switch m.focus {
+		case panelRepos:
+			if m.cursor > 0 {
+				m.cursor--
+				return m, m.loadContextCmd()
+			}
+		case panelBranches:
+			if m.branchCursor > 0 {
+				m.branchCursor--
+			}
 		}
 	case "J":
 		if m.focus == panelBranches && m.branchCursor < len(m.branches)-1 {
