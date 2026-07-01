@@ -90,3 +90,22 @@ func Status(dir string) RepoStatus {
 
 	return st
 }
+
+// Fetch updates remote-tracking refs for the default remote (quiet).
+func Fetch(dir string) error {
+	_, err := run(dir, "fetch", "--quiet")
+	return err
+}
+
+// PullFFOnly fast-forwards the current branch to its upstream. It never merges
+// or rebases; a non-fast-forward returns an error and changes nothing.
+func PullFFOnly(dir string) error {
+	_, err := run(dir, "pull", "--ff-only", "--quiet")
+	return err
+}
+
+// Push pushes the current branch to its upstream. Never uses --force.
+func Push(dir string) error {
+	_, err := run(dir, "push", "--quiet")
+	return err
+}
