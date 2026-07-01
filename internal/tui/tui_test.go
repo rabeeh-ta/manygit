@@ -118,12 +118,26 @@ func TestTUI_FilterNarrowsList(t *testing.T) {
 	for _, r := range "alp" {
 		tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
-	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
-		return bytes.Contains(b, []byte("alpha")) && !bytes.Contains(b, []byte("bravo"))
-	}, teatest.WithDuration(3*time.Second))
-	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+	// Commit the filter with enter (which, unlike esc, keeps m.filter set) and
+	// assert against the settled model state rather than screen-scraping the
+	// teatest output stream: with the two-column view now occupying the full
+	// terminal height, Bubble Tea's tick-based renderer can coalesce the
+	// filter keystrokes into a single repaint that never re-touches alpha's
+	// row bytes (its content is unchanged by the filter), making a
+	// byte-presence assertion for "alpha" racy. Checking visibleRepos()
+	// directly is deterministic and equally faithful to the behavior under
+	// test (only alpha remains visible after filtering to "alp").
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
-	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	fm := tm.FinalModel(t, teatest.WithFinalTimeout(3*time.Second)).(Model)
+	vis := fm.visibleRepos()
+	if len(vis) != 1 || vis[0].repo.Name != "alpha" {
+		names := make([]string, len(vis))
+		for i, r := range vis {
+			names[i] = r.repo.Name
+		}
+		t.Errorf("visibleRepos after filtering to %q = %v, want [alpha]", fm.filter, names)
+	}
 }
 
 func TestTUI_SyncSkipsDirtyRepo(t *testing.T) {
