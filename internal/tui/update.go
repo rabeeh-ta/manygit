@@ -48,6 +48,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusLine = styleGreen.Render("pushed " + name)
 		}
 		return m, statusCmd(msg.path)
+	case checkoutDoneMsg:
+		name := baseName(msg.path)
+		if msg.err != nil {
+			m.statusLine = styleRed.Render("checkout " + name + " failed: " + msg.err.Error())
+			return m, nil
+		}
+		m.statusLine = styleGreen.Render("checked out " + msg.branch + " in " + name)
+		return m, tea.Batch(statusCmd(msg.path), m.loadContextCmd())
 	case branchesMsg:
 		if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == msg.path {
 			m.branches = msg.branches
@@ -111,7 +119,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.branchCursor--
 		}
 	case "b", "enter":
-		if r := m.currentVisible(vis); r != nil && m.branchCursor < len(m.branches) {
+		if r := m.currentVisible(vis); r != nil && m.focus == panelBranches && m.branchCursor < len(m.branches) {
 			if r.status.DirtyCount > 0 {
 				m.statusLine = styleOrange.Render("checkout skipped: dirty working tree")
 				return m, nil
@@ -212,7 +220,7 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filter += string(msg.Runes)
 		m.cursor = 0
 	}
-	return m, nil
+	return m, m.loadContextCmd()
 }
 
 func baseName(p string) string { return filepath.Base(p) }

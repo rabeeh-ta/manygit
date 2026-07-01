@@ -50,9 +50,6 @@ func logCmd(path string, limit int) tea.Cmd {
 
 func checkoutCmd(sem chan struct{}, path, branch string) tea.Cmd {
 	return gated(sem, func() tea.Msg {
-		if err := git.Checkout(path, branch); err != nil {
-			return syncDoneMsg{path: path, err: err}
-		}
-		return statusMsg{path: path, st: git.Status(path)}
+		return checkoutDoneMsg{path: path, branch: branch, err: git.Checkout(path, branch)}
 	})
 }

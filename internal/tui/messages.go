@@ -35,3 +35,9 @@ type logMsg struct {
 	lines []string
 	err   error
 }
+
+type checkoutDoneMsg struct {
+	path   string
+	branch string
+	err    error
+}
