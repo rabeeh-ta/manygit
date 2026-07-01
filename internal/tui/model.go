@@ -32,9 +32,10 @@ type Model struct {
 	cursor int
 	focus  panel
 
-	filter       string
-	filtering    bool
-	showHelp     bool
+	filter          string
+	filtering       bool
+	filterAttention bool // show only repos with changes / ahead / behind
+	showHelp        bool
 	branches     []git.Branch
 	branchCursor int
 	log          []string

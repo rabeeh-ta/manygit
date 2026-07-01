@@ -159,6 +159,30 @@ func TestTUI_FilterNarrowsList(t *testing.T) {
 	}
 }
 
+// F toggles a filter that shows only repos with changes / ahead / behind.
+func TestTUI_AttentionFilter(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos), 100, 30)
+	m.repos[0].status = git.RepoStatus{HasUpstream: true, DirtyCount: 2} // needs attention
+	m.repos[0].loaded = true
+	m.repos[1].status = git.RepoStatus{HasUpstream: true} // clean & in sync
+	m.repos[1].loaded = true
+
+	if got := len(m.visibleRepos()); got != 2 {
+		t.Fatalf("expected 2 visible without filter, got %d", got)
+	}
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("F")})
+	m = mm.(Model)
+	vis := m.visibleRepos()
+	if len(vis) != 1 || vis[0] != m.repos[0] {
+		t.Errorf("attention filter should show only the dirty repo, got %d", len(vis))
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("F")})
+	if got := len(mm.(Model).visibleRepos()); got != 2 {
+		t.Errorf("toggling filter off should restore all repos, got %d", got)
+	}
+}
+
 func TestTUI_SyncSkipsDirtyRepo(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	// make the first repo dirty

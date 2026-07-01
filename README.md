@@ -40,6 +40,7 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 | `1` `2` `3`, `tab` | focus the Repos / Branches / Log panel |
 | `j`/`k`, `↑`/`↓` | move within the focused panel |
 | `space` | jump to the highlighted repo's branches (`space` again returns to Repos) |
+| `F` | toggle: show only repos with changes / ahead / behind |
 | `/` | filter repos by name; `esc` clears |
 | `s` | sync the highlighted repo (fetch + `pull --ff-only`; dirty repos skipped) |
 | `p` | push the highlighted repo (`git push`) |

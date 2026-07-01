@@ -97,19 +97,31 @@ func clampLines(s string, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
-// visibleRepos returns repos matching the current filter (all if empty).
+// visibleRepos returns repos matching the active filters: the name filter (`/`)
+// and/or the "needs attention" filter (`F`). Both compose (AND).
 func (m Model) visibleRepos() []*repoVM {
-	if m.filter == "" {
+	if m.filter == "" && !m.filterAttention {
 		return m.repos
 	}
 	needle := strings.ToLower(m.filter)
 	var out []*repoVM
 	for _, r := range m.repos {
-		if strings.Contains(strings.ToLower(r.repo.Name), needle) {
-			out = append(out, r)
+		if needle != "" && !strings.Contains(strings.ToLower(r.repo.Name), needle) {
+			continue
 		}
+		if m.filterAttention && !needsAttention(r) {
+			continue
+		}
+		out = append(out, r)
 	}
 	return out
+}
+
+// needsAttention reports whether a repo has uncommitted changes or is out of
+// sync with its upstream (ahead/behind) — something to commit, pull, or push.
+func needsAttention(r *repoVM) bool {
+	st := r.status
+	return st.DirtyCount > 0 || st.Ahead > 0 || st.Behind > 0
 }
 
 // currentVisible is the highlighted repo within the visible slice.
@@ -188,7 +200,7 @@ func (m Model) renderLog(contentW int) string {
 
 func (m Model) footer() string {
 	return styleDim.Render(
-		"space branches | s sync | p push | b checkout | o open | r refetch | ? help | q quit")
+		"space branches | F changed | s sync | p push | b checkout | o open | r refetch | ? help | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -219,6 +231,7 @@ func (m Model) helpView() string {
 		row("tab", "cycle panels"),
 		row("j / k", "move within the FOCUSED panel"),
 		row("space", "jump to the current repo's branches (space again = back)"),
+		row("F", "toggle: show only changed / out-of-sync repos"),
 		row("/", "filter repos by name (esc clears)"),
 		"",
 		styleGroup.Render("Actions") + styleDim.Render("  — apply to the highlighted (>) repo"),
@@ -255,8 +268,14 @@ func (m Model) View() string {
 		return m.helpView()
 	}
 	d := computeDims(m.width, m.height)
-	title := styleTitle.Render("manygit") + "  " +
-		styleDim.Render(fmt.Sprintf("%d repos", len(m.repos)))
+	count := fmt.Sprintf("%d repos", len(m.repos))
+	if m.filterAttention || m.filter != "" {
+		count = fmt.Sprintf("%d of %d repos", len(m.visibleRepos()), len(m.repos))
+	}
+	title := styleTitle.Render("manygit") + "  " + styleDim.Render(count)
+	if m.filterAttention {
+		title += "  " + styleYellow.Render("[changed / unsynced]")
+	}
 
 	left := titledPanel(1, "Repos", d.leftW, d.bodyH, m.focus == panelRepos,
 		lipgloss.NewStyle().MaxWidth(d.leftW-2).Render(clampLines(m.renderRepoBody(d), d.bodyH)))

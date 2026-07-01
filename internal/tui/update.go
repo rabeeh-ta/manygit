@@ -174,6 +174,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.focus = panelRepos
 		}
+	case "F":
+		// Toggle the "needs attention" view: only repos with changes / ahead / behind.
+		m.filterAttention = !m.filterAttention
+		m.cursor = 0
+		return m, m.loadContextCmd()
 	case "/":
 		m.filtering = true
 	case "f":
