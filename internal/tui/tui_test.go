@@ -190,6 +190,53 @@ func TestTUI_ScriptsPanel(t *testing.T) {
 	}
 }
 
+// titledBox must keep the top border aligned even when the label contains
+// non-ASCII characters (e.g. an accented repo name in the graph title).
+func TestTUI_TitledBoxNonASCIILabel(t *testing.T) {
+	box := titledBox("Graph: café-répo (esc close)", 40, 5, true, "content")
+	want := -1
+	for _, ln := range strings.Split(box, "\n") {
+		if lw := lipgloss.Width(ln); want < 0 {
+			want = lw
+		} else if lw != want {
+			t.Errorf("titledBox line width %d != %d: %q", lw, want, ln)
+		}
+	}
+}
+
+// g opens a full-screen graph overlay; graphMsg populates it, j/k scroll, esc closes.
+func TestTUI_GraphOverlay(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	m = mm.(Model)
+	if !m.showGraph {
+		t.Fatal("g should open the graph overlay")
+	}
+	if cmd == nil {
+		t.Fatal("g should dispatch a graph-load command")
+	}
+	path := m.currentVisible(m.visibleRepos()).repo.Path
+	mm, _ = m.Update(graphMsg{path: path, lines: []string{"* a", "* b", "* c"}})
+	m = mm.(Model)
+	if len(m.graphLines) != 3 {
+		t.Fatalf("graphMsg should populate graphLines, got %d", len(m.graphLines))
+	}
+	if !strings.Contains(stripANSI(m.View()), "Graph:") {
+		t.Error("graph view should show a Graph: title")
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = mm.(Model)
+	if m.graphOffset != 1 {
+		t.Errorf("j should scroll the graph, offset=%d", m.graphOffset)
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if mm.(Model).showGraph {
+		t.Error("esc should close the graph overlay")
+	}
+}
+
 // Action status messages set the status line and schedule an expiry; a matching
 // expiry clears it, but a stale one (older generation) must not.
 func TestTUI_StatusLineExpires(t *testing.T) {

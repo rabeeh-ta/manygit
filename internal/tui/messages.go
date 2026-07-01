@@ -51,3 +51,10 @@ type scriptDoneMsg struct {
 type statusExpireMsg struct {
 	gen int
 }
+
+// graphMsg carries a larger colored graph for the full-screen graph view.
+type graphMsg struct {
+	path  string
+	lines []string
+	err   error
+}

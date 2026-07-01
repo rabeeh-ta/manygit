@@ -48,6 +48,14 @@ func logCmd(path string, limit int) tea.Cmd {
 	}
 }
 
+// graphCmd loads a larger colored graph for the full-screen graph view.
+func graphCmd(path string, limit int) tea.Cmd {
+	return func() tea.Msg {
+		lines, err := git.GraphLog(path, limit)
+		return graphMsg{path: path, lines: lines, err: err}
+	}
+}
+
 func checkoutCmd(sem chan struct{}, path, branch string) tea.Cmd {
 	return gated(sem, func() tea.Msg {
 		return checkoutDoneMsg{path: path, branch: branch, err: git.Checkout(path, branch)}

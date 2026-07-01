@@ -73,6 +73,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.log = msg.lines
 		}
 		return m, nil
+	case graphMsg:
+		if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == msg.path {
+			m.graphLines = msg.lines
+			m.graphOffset = 0
+		}
+		return m, nil
 	case scriptDoneMsg:
 		var s string
 		if msg.err != nil {
@@ -128,12 +134,37 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = false // any other key dismisses help
 		return m, nil
 	}
+	if m.showGraph {
+		switch msg.String() {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		case "g", "esc":
+			m.showGraph = false
+		case "down", "j":
+			if m.graphOffset < len(m.graphLines)-1 {
+				m.graphOffset++
+			}
+		case "up", "k":
+			if m.graphOffset > 0 {
+				m.graphOffset--
+			}
+		}
+		return m, nil
+	}
 	vis := m.visibleRepos()
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "?":
 		m.showHelp = true
+	case "g":
+		// Full-screen colored commit graph of the highlighted repo.
+		m.showGraph = true
+		m.graphOffset = 0
+		m.graphLines = nil // don't flash the previous repo's graph while loading
+		if r := m.currentVisible(vis); r != nil {
+			return m, graphCmd(r.repo.Path, 400)
+		}
 	case "1":
 		m.focus = panelRepos
 	case "2":

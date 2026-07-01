@@ -40,6 +40,7 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 | `1` `2` `3` `4`, `tab` | focus the Repos / Scripts / Branches / Log panel |
 | `j`/`k`, `↑`/`↓` | move within the focused panel |
 | `space` | Repos panel → view branches · Scripts panel → run the script · else → back to Repos |
+| `g` | full-screen colored commit graph (`j`/`k` scroll, `esc`/`g` close) |
 | `F` | toggle: show only repos with changes / ahead / behind |
 | `/` | filter repos by name; `esc` clears |
 | `s` | sync the highlighted repo (fetch + `pull --ff-only`; dirty repos skipped) |

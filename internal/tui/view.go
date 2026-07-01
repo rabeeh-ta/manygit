@@ -10,10 +10,14 @@ import (
 )
 
 // titledPanel wraps content in a rounded-border panel whose TOP border embeds a
-// lazygit-style "[N] Title" (accent-colored + bold when focused), e.g.
-// ╭─[1] Repos────────╮. Box-drawing chars are width-1 in all terminals, so this
-// stays aligned. The title lives in the border, not in the content.
+// lazygit-style "[N] Title", e.g. ╭─[1] Repos────────╮.
 func titledPanel(n int, title string, innerW, innerH int, focused bool, content string) string {
+	return titledBox(fmt.Sprintf("[%d] %s", n, title), innerW, innerH, focused, content)
+}
+
+// titledBox is titledPanel with a raw label (ASCII) spliced into the top border.
+// Box-drawing chars are width-1 in all terminals, so this stays aligned.
+func titledBox(label string, innerW, innerH int, focused bool, content string) string {
 	box := panelStyle(innerW, innerH, focused).Render(content)
 	lines := strings.Split(box, "\n")
 	if len(lines) == 0 || innerW < 6 {
@@ -23,11 +27,14 @@ func titledPanel(n int, title string, innerW, innerH int, focused bool, content 
 	if focused {
 		bc = borderAccent
 	}
-	label := fmt.Sprintf("[%d] %s", n, title) // ASCII, so byte length == display width
-	if maxLabel := innerW - 3; len(label) > maxLabel && maxLabel > 0 {
-		label = label[:maxLabel]
+	// Measure by display width, not bytes — the label may include a repo name
+	// with non-ASCII characters. Truncate rune-safely so the border stays aligned.
+	if maxLabel := innerW - 3; lipgloss.Width(label) > maxLabel && maxLabel > 0 {
+		if rl := []rune(label); len(rl) > maxLabel {
+			label = string(rl[:maxLabel])
+		}
 	}
-	fill := innerW - 1 - len(label) // one leading dash + label + fill == innerW between corners
+	fill := innerW - 1 - lipgloss.Width(label) // leading dash + label + fill == innerW between corners
 	if fill < 0 {
 		fill = 0
 	}
@@ -219,7 +226,7 @@ func (m Model) footer() string {
 		space = "space run"
 	}
 	return styleDim.Render(
-		space + " | F changed | s sync | p push | b checkout | o open | r refetch | ? help | q quit")
+		space + " | g graph | F changed | s sync | p push | o open | r refetch | ? help | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -250,6 +257,7 @@ func (m Model) helpView() string {
 		row("tab", "cycle panels"),
 		row("j / k", "move within the FOCUSED panel"),
 		row("space", "Repos → branches · Scripts → run it · else back to Repos"),
+		row("g", "full-screen colored commit graph (j/k scroll · esc closes)"),
 		row("F", "toggle: show only changed / out-of-sync repos"),
 		row("/", "filter repos by name (esc clears)"),
 		"",
@@ -282,7 +290,46 @@ func (m Model) helpView() string {
 	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
 }
 
+// graphView renders a full-screen colored commit graph with j/k scrolling.
+func (m Model) graphView() string {
+	tw, th := m.width, m.height
+	if tw <= 0 {
+		tw = minTermW
+	}
+	if th <= 0 {
+		th = minTermH
+	}
+	name := "(no repo)"
+	if r := m.currentVisible(m.visibleRepos()); r != nil {
+		name = r.repo.Name
+	}
+	innerH := th - 2 // border rows
+	if innerH < 3 {
+		innerH = 3
+	}
+	content := styleDim.Render("(loading graph…)")
+	if len(m.graphLines) > 0 {
+		start := m.graphOffset
+		if start > len(m.graphLines)-1 {
+			start = len(m.graphLines) - 1
+		}
+		if start < 0 {
+			start = 0
+		}
+		end := start + innerH
+		if end > len(m.graphLines) {
+			end = len(m.graphLines)
+		}
+		content = lipgloss.NewStyle().MaxWidth(tw - 4).Render(strings.Join(m.graphLines[start:end], "\n"))
+	}
+	box := titledBox("Graph: "+name+"  (j/k scroll, esc close)", tw-2, innerH, true, content)
+	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
+}
+
 func (m Model) View() string {
+	if m.showGraph {
+		return m.graphView()
+	}
 	if m.showHelp {
 		return m.helpView()
 	}

@@ -157,9 +157,11 @@ func Checkout(dir, branch string) error {
 }
 
 // GraphLog returns up to limit lines of `git log --graph --oneline` across all
-// refs, decorated. Lines are plain (no ANSI); the TUI applies styling.
+// refs, decorated. Lines carry git's own ANSI color (`--color=always`) so each
+// branch line/dot is colored, like tig/lazygit; the graph characters are ASCII.
 func GraphLog(dir string, limit int) ([]string, error) {
-	out, err := run(dir, "log", "--graph", "--oneline", "--decorate", "--all", fmt.Sprintf("-n%d", limit))
+	out, err := run(dir, "log", "--graph", "--oneline", "--decorate", "--all",
+		"--color=always", fmt.Sprintf("-n%d", limit))
 	if err != nil {
 		return nil, err
 	}
