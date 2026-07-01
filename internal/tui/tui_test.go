@@ -180,14 +180,35 @@ func TestTUI_ShowsLogForHighlighted(t *testing.T) {
 }
 
 // Regression guard for the Layout & Spacing Discipline: no rendered line may
-// exceed the terminal width.
+// exceed the terminal width, at every supported width.
 func TestTUI_LinesFitWidth(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	const w = 100
-	m := loadAll(t, New(cfg, repos), w, 30)
-	for _, line := range strings.Split(m.View(), "\n") {
-		if lipgloss.Width(line) > w {
-			t.Errorf("line width %d > %d: %q", lipgloss.Width(line), w, line)
+	for _, w := range []int{80, 100, 160, 200} {
+		m := loadAll(t, New(cfg, repos), w, 30)
+		for _, line := range strings.Split(m.View(), "\n") {
+			if got := lipgloss.Width(line); got > w {
+				t.Errorf("w=%d: line width %d > %d: %q", w, got, w, line)
+			}
+		}
+	}
+}
+
+// Repo rows must fit the left panel's content width at every supported terminal
+// width — otherwise lipgloss wraps them and columns misalign. This guards the
+// §6.1 fixed-width discipline at narrow widths (LinesFitWidth's single w=100 misses it).
+func TestTUI_RepoRowsFitPanelContent(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	for _, w := range []int{80, 81, 82, 83, 100, 160, 200} {
+		m := loadAll(t, New(cfg, repos), w, 30)
+		d := computeDims(w, 30)
+		content := d.leftW - 2 // panelStyle Padding(0,1) → content area is leftW-2
+		for _, line := range strings.Split(m.renderRepoBody(d), "\n") {
+			if line == "" {
+				continue
+			}
+			if got := lipgloss.Width(line); got > content {
+				t.Errorf("w=%d: repo-body line width %d exceeds panel content %d: %q", w, got, content, line)
+			}
 		}
 	}
 }

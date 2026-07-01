@@ -28,8 +28,8 @@ func computeDims(width, height int) dims {
 	}
 	usable := width - gutter - 2*borderPad
 	leftW := usable * 38 / 100
-	if leftW < 24 {
-		leftW = 24
+	if leftW < 30 {
+		leftW = 30
 	}
 	rightW := usable - leftW
 	if rightW < 24 {
