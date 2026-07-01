@@ -111,19 +111,19 @@ func TestTUI_CursorMovesDown(t *testing.T) {
 var _ = lipgloss.Width // used by the spacing test in Task 10
 var _ = strings.Split
 
-func TestTUI_SpaceSelectsRepo(t *testing.T) {
+// space drills into the highlighted repo's branches (and toggles back), instead
+// of the old multi-select.
+func TestTUI_SpaceFocusesBranches(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	tm := teatest.NewTestModel(t, New(cfg, repos), teatest.WithInitialTermSize(120, 40))
-	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
-		return bytes.Contains(b, []byte("alpha"))
-	}, teatest.WithDuration(3*time.Second))
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
-	// Assert on settled model state (deterministic) rather than scraping for a
-	// marker glyph. Cursor starts at 0 → the alphabetically-first repo.
-	fm := tm.FinalModel(t, teatest.WithFinalTimeout(3*time.Second)).(Model)
-	if !fm.selected[fm.repos[0].repo.Path] {
-		t.Errorf("expected repos[0] selected after space; selected=%v", fm.selected)
+	m := loadAll(t, New(cfg, repos), 100, 30) // focus starts on Repos
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
+	m = mm.(Model)
+	if m.focus != panelBranches {
+		t.Errorf("space in Repos panel should focus Branches, got %v", m.focus)
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
+	if mm.(Model).focus != panelRepos {
+		t.Error("space in Branches panel should return to Repos")
 	}
 }
 
@@ -254,12 +254,11 @@ func TestTUI_DecorativeGlyphsAreASCII(t *testing.T) {
 	if g := stripANSI(dirtyBadge(git.RepoStatus{DirtyCount: 3})); !isASCII(g) {
 		t.Errorf("dirtyBadge = %q is not ASCII", g)
 	}
-	// cursor prefix + selection marker via a rendered highlighted+selected row
+	// cursor prefix via a rendered highlighted row
 	cfg, repos := twoRepos(t)
 	m := New(cfg, repos)
-	m.selected[m.repos[0].repo.Path] = true
 	if row := stripANSI(m.renderRow(0, m.repos[0], 12)); !isASCII(row) {
-		t.Errorf("renderRow (cursor+selected) = %q is not ASCII", row)
+		t.Errorf("renderRow (cursor row) = %q is not ASCII", row)
 	}
 }
 
@@ -321,7 +320,7 @@ func TestTUI_HelpOverlay(t *testing.T) {
 		t.Fatal("? should open the help overlay")
 	}
 	v := stripANSI(m.View())
-	for _, want := range []string{"PUSH", "PULL", "dirty", "select", "sync"} {
+	for _, want := range []string{"PUSH", "PULL", "dirty", "sync", "branches"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("help overlay missing %q", want)
 		}

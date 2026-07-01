@@ -1,8 +1,8 @@
 # manygit
 
 A stripped-down, lazygit-style TUI for managing **many git repos at once** —
-see which are in sync / ahead / behind / dirty, and safely fetch, fast-forward
-pull, push, or switch branches across a selection.
+see at a glance which are in sync / ahead / behind / dirty, and safely fetch,
+fast-forward pull, push, or switch branches on the highlighted repo.
 
 ## Install
 
@@ -33,20 +33,33 @@ parent directory.
 
 ## Keys
 
+Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi-select.
+
 | Key | Action |
 |---|---|
-| `1` `2` `3`, `tab` | focus Repos / Branches / Log |
-| `↑`/`↓`, `k`/`j` | move cursor |
-| `J`/`K` | move within Branches panel |
-| `space` | toggle-select repo |
-| `a` | toggle select-all (visible) |
-| `s` | sync selection (fetch + `pull --ff-only`; dirty skipped) |
-| `p` | push selection (`git push`) |
-| `f` / `r` | fetch highlighted / all |
-| `b` / `enter` | checkout the selected branch in the Branches panel (dirty repos skipped) |
-| `o` | open highlighted repo in `open_cmd` (default `code`) |
-| `/` | filter by name; `esc` clears |
+| `1` `2` `3`, `tab` | focus the Repos / Branches / Log panel |
+| `j`/`k`, `↑`/`↓` | move within the focused panel |
+| `space` | jump to the highlighted repo's branches (`space` again returns to Repos) |
+| `/` | filter repos by name; `esc` clears |
+| `s` | sync the highlighted repo (fetch + `pull --ff-only`; dirty repos skipped) |
+| `p` | push the highlighted repo (`git push`) |
+| `f` / `r` | fetch the highlighted repo / refetch all |
+| `b` / `enter` | checkout the selected branch (in the Branches panel; dirty repos skipped) |
+| `o` | open the highlighted repo in `open_cmd` (default `code`) |
+| `?` | help overlay (status legend + keys) |
 | `q` | quit |
+
+## Status column
+
+| Glyph | Meaning |
+|---|---|
+| `ok` | up to date with its upstream |
+| `^N` | ahead N — commits to **push** |
+| `vN` | behind N — commits to **pull** |
+| `^N vM` | diverged (N ahead, M behind) |
+| `*N` | N files changed (dirty working tree) |
+| `~` / `.` | fetching / loading |
+| `!` | no upstream, or error |
 
 ## Config (optional)
 
@@ -61,5 +74,5 @@ prune:
   - vendor
 ```
 
-manygit never writes to the folder you launch from. Selection is in-memory and
-resets each run. It never stashes, discards, force-pushes, merges, or rebases.
+manygit never writes to the folder you launch from, and never stashes,
+discards, force-pushes, merges, or rebases.

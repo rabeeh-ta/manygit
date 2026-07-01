@@ -32,7 +32,6 @@ type Model struct {
 	cursor int
 	focus  panel
 
-	selected     map[string]bool
 	filter       string
 	filtering    bool
 	showHelp     bool
@@ -56,11 +55,10 @@ func New(cfg config.Config, repos []discover.Repo) Model {
 		conc = 1
 	}
 	return Model{
-		cfg:      cfg,
-		repos:    vms,
-		focus:    panelRepos,
-		selected: map[string]bool{},
-		sem:      make(chan struct{}, conc),
+		cfg:   cfg,
+		repos: vms,
+		focus: panelRepos,
+		sem:   make(chan struct{}, conc),
 	}
 }
 

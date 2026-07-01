@@ -131,14 +131,12 @@ func (m Model) renderRow(idx int, r *repoVM, nameW int) string {
 			cursor = styleDim.Render("> ")
 		}
 	}
-	mark := " "
-	if m.selected[r.repo.Path] {
-		mark = styleGreen.Render("x")
-	}
 	nameCell := nameStyle.Render(truncate(r.repo.Name, nameW))
 	dirtyCell := lipgloss.NewStyle().Width(wDirty).Render(dirtyBadge(r.status))
 	statusCell := lipgloss.NewStyle().Width(wStatus).Render(syncGlyph(r))
-	return cursor + mark + " " + nameCell + " " + dirtyCell + " " + statusCell
+	// Two spaces after the cursor keep the column budget (computeDims) unchanged
+	// now that the selection marker is gone.
+	return cursor + "  " + nameCell + " " + dirtyCell + " " + statusCell
 }
 
 func (m Model) renderRepoBody(d dims) string {
@@ -186,7 +184,7 @@ func (m Model) renderLog(contentW int) string {
 
 func (m Model) footer() string {
 	return styleDim.Render(
-		"space select | s sync | p push | b checkout | o open | r refetch | ? help | q quit")
+		"space branches | s sync | p push | b checkout | o open | r refetch | ? help | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -212,14 +210,14 @@ func (m Model) helpView() string {
 		row("1 / 2 / 3", "focus the Repos / Branches / Log panel"),
 		row("tab", "cycle panels"),
 		row("j / k", "move within the FOCUSED panel"),
+		row("space", "jump to the current repo's branches (space again = back)"),
 		row("/", "filter repos by name (esc clears)"),
 		"",
-		styleGroup.Render("Selection & actions") + styleDim.Render("  — apply to selected repos, or the cursor repo if none selected"),
-		row("space", "select / deselect the current repo   (x = selected)"),
+		styleGroup.Render("Actions") + styleDim.Render("  — apply to the highlighted (>) repo"),
 		row("s", "sync: fetch + pull --ff-only   (dirty repos skipped)"),
 		row("p", "push"),
 		row("f / r", "fetch current repo / refetch all"),
-		row("b / enter", "checkout the selected branch (focus the Branches panel first)"),
+		row("b / enter", "checkout the selected branch (in the Branches panel)"),
 		row("o", "open the current repo in your editor"),
 		"",
 		styleGroup.Render("Status column"),
@@ -250,7 +248,7 @@ func (m Model) View() string {
 	}
 	d := computeDims(m.width, m.height)
 	title := styleTitle.Render("manygit") + "  " +
-		styleDim.Render(fmt.Sprintf("%d repos, %d selected", len(m.repos), len(m.selected)))
+		styleDim.Render(fmt.Sprintf("%d repos", len(m.repos)))
 
 	left := titledPanel(1, "Repos", d.leftW, d.bodyH, m.focus == panelRepos,
 		lipgloss.NewStyle().MaxWidth(d.leftW-2).Render(clampLines(m.renderRepoBody(d), d.bodyH)))

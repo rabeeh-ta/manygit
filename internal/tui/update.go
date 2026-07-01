@@ -167,19 +167,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case " ":
-		if r := m.currentVisible(vis); r != nil {
-			m.selected[r.repo.Path] = !m.selected[r.repo.Path]
-		}
-	case "a":
-		allSel := len(vis) > 0
-		for _, r := range vis {
-			if !m.selected[r.repo.Path] {
-				allSel = false
-				break
-			}
-		}
-		for _, r := range vis {
-			m.selected[r.repo.Path] = !allSel
+		// Jump into the highlighted repo's branches (space again returns to Repos).
+		if m.focus == panelRepos {
+			m.focus = panelBranches
+			m.branchCursor = 0
+		} else {
+			m.focus = panelRepos
 		}
 	case "/":
 		m.filtering = true
@@ -250,17 +243,8 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func baseName(p string) string { return filepath.Base(p) }
 
-// targets returns the action targets: the selection if any, else the highlighted repo.
+// targets returns the repo actions apply to: the highlighted (cursor) repo.
 func (m Model) targets() []*repoVM {
-	var sel []*repoVM
-	for _, r := range m.repos {
-		if m.selected[r.repo.Path] {
-			sel = append(sel, r)
-		}
-	}
-	if len(sel) > 0 {
-		return sel
-	}
 	if r := m.currentVisible(m.visibleRepos()); r != nil {
 		return []*repoVM{r}
 	}
