@@ -269,7 +269,7 @@ func TestTUI_PanelsShowNumbers(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos), 120, 40)
 	view := stripANSI(m.View())
-	for _, want := range []string{"1 Repos", "2 Branches", "3 Log"} {
+	for _, want := range []string{"[1] Repos", "[2] Branches", "[3] Log"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("View missing panel label %q", want)
 		}

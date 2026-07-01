@@ -9,14 +9,32 @@ import (
 	"manygit/internal/git"
 )
 
-// panelHeader renders a numbered panel title ("1 Repos"), accented when the
-// panel is focused so the 1/2/3 focus keys are discoverable.
-func panelHeader(n int, name string, focused bool) string {
-	label := fmt.Sprintf("%d %s", n, name)
-	if focused {
-		return styleTitle.Render(label)
+// titledPanel wraps content in a rounded-border panel whose TOP border embeds a
+// lazygit-style "[N] Title" (accent-colored + bold when focused), e.g.
+// ╭─[1] Repos────────╮. Box-drawing chars are width-1 in all terminals, so this
+// stays aligned. The title lives in the border, not in the content.
+func titledPanel(n int, title string, innerW, innerH int, focused bool, content string) string {
+	box := panelStyle(innerW, innerH, focused).Render(content)
+	lines := strings.Split(box, "\n")
+	if len(lines) == 0 || innerW < 6 {
+		return box
 	}
-	return styleGroup.Render(label)
+	bc := lipgloss.Color("240")
+	if focused {
+		bc = borderAccent
+	}
+	label := fmt.Sprintf("[%d] %s", n, title) // ASCII, so byte length == display width
+	if maxLabel := innerW - 3; len(label) > maxLabel && maxLabel > 0 {
+		label = label[:maxLabel]
+	}
+	fill := innerW - 1 - len(label) // one leading dash + label + fill == innerW between corners
+	if fill < 0 {
+		fill = 0
+	}
+	border := lipgloss.NewStyle().Foreground(bc)
+	titleStyle := lipgloss.NewStyle().Foreground(bc).Bold(true)
+	lines[0] = border.Render("╭─") + titleStyle.Render(label) + border.Render(strings.Repeat("─", fill)+"╮")
+	return strings.Join(lines, "\n")
 }
 
 // syncGlyph is the concise, ASCII-only status token for a repo row. ASCII keeps
@@ -119,7 +137,6 @@ func (m Model) renderRow(idx int, r *repoVM, nameW int) string {
 
 func (m Model) renderRepoBody(d dims) string {
 	var b strings.Builder
-	b.WriteString(panelHeader(1, "Repos", m.focus == panelRepos) + "\n")
 	lastGroup := ""
 	for i, r := range m.visibleRepos() {
 		if r.repo.Group != lastGroup {
@@ -133,7 +150,6 @@ func (m Model) renderRepoBody(d dims) string {
 
 func (m Model) renderBranches(contentW int) string {
 	var b strings.Builder
-	b.WriteString(panelHeader(2, "Branches", m.focus == panelBranches) + "\n")
 	for i, br := range m.branches {
 		cursor := "  "
 		if m.focus == panelBranches && i == m.branchCursor {
@@ -155,7 +171,6 @@ func (m Model) renderBranches(contentW int) string {
 
 func (m Model) renderLog(contentW int) string {
 	var b strings.Builder
-	b.WriteString(panelHeader(3, "Log", m.focus == panelLog) + "\n")
 	for _, line := range m.log {
 		b.WriteString(line + "\n")
 	}
@@ -165,7 +180,7 @@ func (m Model) renderLog(contentW int) string {
 
 func (m Model) footer() string {
 	return styleDim.Render(
-		"space select · s sync · p push · b checkout · o open · r refetch · ? help · q quit")
+		"space select | s sync | p push | b checkout | o open | r refetch | ? help | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -181,18 +196,18 @@ func (m Model) statusOrFilterLine() string {
 func (m Model) View() string {
 	d := computeDims(m.width, m.height)
 	title := styleTitle.Render("manygit") + "  " +
-		styleDim.Render(fmt.Sprintf("%d repos · %d selected", len(m.repos), len(m.selected)))
+		styleDim.Render(fmt.Sprintf("%d repos, %d selected", len(m.repos), len(m.selected)))
 
-	left := panelStyle(d.leftW, d.bodyH, m.focus == panelRepos).
-		Render(lipgloss.NewStyle().MaxWidth(d.leftW - 2).Render(clampLines(m.renderRepoBody(d), d.bodyH)))
+	left := titledPanel(1, "Repos", d.leftW, d.bodyH, m.focus == panelRepos,
+		lipgloss.NewStyle().MaxWidth(d.leftW-2).Render(clampLines(m.renderRepoBody(d), d.bodyH)))
 
 	// right column: two stacked panels sharing the left panel's total height.
 	topInner := max((d.bodyH-2)*40/100, 3)
 	botInner := max((d.bodyH-2)-topInner, 3)
-	branches := panelStyle(d.rightW, topInner, m.focus == panelBranches).
-		Render(clampLines(m.renderBranches(d.rightW-2), topInner))
-	logp := panelStyle(d.rightW, botInner, m.focus == panelLog).
-		Render(clampLines(m.renderLog(d.rightW-2), botInner))
+	branches := titledPanel(2, "Branches", d.rightW, topInner, m.focus == panelBranches,
+		clampLines(m.renderBranches(d.rightW-2), topInner))
+	logp := titledPanel(3, "Log", d.rightW, botInner, m.focus == panelLog,
+		clampLines(m.renderLog(d.rightW-2), botInner))
 	right := lipgloss.JoinVertical(lipgloss.Left, branches, logp)
 
 	cols := lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gutter), right)
