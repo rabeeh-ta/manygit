@@ -182,7 +182,11 @@ func (m Model) renderBranches(contentW int) string {
 		if m.focus == panelBranches && i == m.branchCursor {
 			cursor = styleCursor.Render("> ")
 		}
+		// Cap the display name — many branches are long Jira-generated names.
 		name := br.Name
+		if r := []rune(name); len(r) > branchNameMax {
+			name = string(r[:branchNameMax-2]) + ".."
+		}
 		if br.IsRemote {
 			name = styleDim.Render(name)
 		}

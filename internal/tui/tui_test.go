@@ -204,6 +204,27 @@ func TestTUI_TitledBoxNonASCIILabel(t *testing.T) {
 	}
 }
 
+// Long branch names are capped to branchNameMax (15) display chars in the panel.
+func TestTUI_BranchNamesTruncated(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m.focus = panelBranches
+	m.branches = []git.Branch{
+		{Name: "PROJ-1234-implement-the-new-onboarding-flow"},
+		{Name: "master", IsCurrent: true},
+	}
+	out := stripANSI(m.renderBranches(80))
+	if strings.Contains(out, "PROJ-1234-implement-the-new-onboarding-flow") {
+		t.Error("long branch name should be truncated")
+	}
+	if !strings.Contains(out, "PROJ-1234-imp..") { // 13 chars + ".."
+		t.Errorf("expected truncated 'PROJ-1234-imp..', got:\n%s", out)
+	}
+	if !strings.Contains(out, "master") { // short name unchanged
+		t.Error("short branch name should be shown in full")
+	}
+}
+
 // g opens a full-screen graph overlay; graphMsg populates it, j/k scroll, esc closes.
 func TestTUI_GraphOverlay(t *testing.T) {
 	cfg, repos := twoRepos(t)

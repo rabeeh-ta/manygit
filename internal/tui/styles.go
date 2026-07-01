@@ -21,8 +21,9 @@ var (
 // Fixed column widths (display cells) reserve room for the widest glyph strings
 // so columns never shift when a glyph renders two cells wide.
 const (
-	wDirty  = 4  // "●99"
-	wStatus = 10 // "⇕↑9↓9"
+	wDirty        = 4  // "●99"
+	wStatus       = 10 // "⇕↑9↓9"
+	branchNameMax = 15 // truncate long (Jira-generated) branch names in the panel
 )
 
 // panelStyle is a bordered, padded container. Width/Height set the INNER size
