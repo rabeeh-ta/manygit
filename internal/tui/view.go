@@ -198,9 +198,28 @@ func (m Model) renderLog(contentW int) string {
 	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
 }
 
+func (m Model) renderScripts(contentW int) string {
+	if len(m.scripts) == 0 {
+		return styleDim.Render("(no .sh scripts found)")
+	}
+	var b strings.Builder
+	for i, s := range m.scripts {
+		cursor := "  "
+		if m.focus == panelScripts && i == m.scriptCursor {
+			cursor = styleCursor.Render("> ")
+		}
+		b.WriteString(cursor + s.Name + "\n")
+	}
+	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
+}
+
 func (m Model) footer() string {
+	space := "space branches"
+	if m.focus == panelScripts {
+		space = "space run"
+	}
 	return styleDim.Render(
-		"space branches | F changed | s sync | p push | b checkout | o open | r refetch | ? help | q quit")
+		space + " | F changed | s sync | p push | b checkout | o open | r refetch | ? help | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -227,10 +246,10 @@ func (m Model) helpView() string {
 		styleTitle.Render("manygit — help"),
 		"",
 		styleGroup.Render("Panels & navigation"),
-		row("1 / 2 / 3", "focus the Repos / Branches / Log panel"),
+		row("1 / 2 / 3 / 4", "focus the Repos / Branches / Log / Scripts panel"),
 		row("tab", "cycle panels"),
 		row("j / k", "move within the FOCUSED panel"),
-		row("space", "jump to the current repo's branches (space again = back)"),
+		row("space", "Repos → branches · Scripts → run it · else back to Repos"),
 		row("F", "toggle: show only changed / out-of-sync repos"),
 		row("/", "filter repos by name (esc clears)"),
 		"",
@@ -277,8 +296,21 @@ func (m Model) View() string {
 		title += "  " + styleYellow.Render("[changed / unsynced]")
 	}
 
-	left := titledPanel(1, "Repos", d.leftW, d.bodyH, m.focus == panelRepos,
-		lipgloss.NewStyle().MaxWidth(d.leftW-2).Render(clampLines(m.renderRepoBody(d), d.bodyH)))
+	// left column: Repos (large) over a small Scripts panel; the two share the
+	// column's total height, matching the right column.
+	scriptsInner := len(m.scripts)
+	if scriptsInner < 3 {
+		scriptsInner = 3
+	}
+	if maxS := (d.bodyH - 2) / 3; scriptsInner > maxS {
+		scriptsInner = maxS
+	}
+	reposInner := max((d.bodyH-2)-scriptsInner, 3)
+	reposPanel := titledPanel(1, "Repos", d.leftW, reposInner, m.focus == panelRepos,
+		lipgloss.NewStyle().MaxWidth(d.leftW-2).Render(clampLines(m.renderRepoBody(d), reposInner)))
+	scriptsPanel := titledPanel(4, "Scripts", d.leftW, scriptsInner, m.focus == panelScripts,
+		clampLines(m.renderScripts(d.leftW-2), scriptsInner))
+	left := lipgloss.JoinVertical(lipgloss.Left, reposPanel, scriptsPanel)
 
 	// right column: two stacked panels sharing the left panel's total height.
 	topInner := max((d.bodyH-2)*40/100, 3)

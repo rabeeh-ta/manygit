@@ -78,6 +78,34 @@ func TestDiscover_RespectsMaxDepth(t *testing.T) {
 	}
 }
 
+func TestScripts_ShallowAndPruned(t *testing.T) {
+	root := t.TempDir()
+	write := func(parts ...string) {
+		p := filepath.Join(append([]string{root}, parts...)...)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("build.sh")                // depth 1
+	write("scripts", "sync.sh")      // depth 2
+	write("a", "b", "deep.sh")       // depth 3 -> excluded
+	write("node_modules", "junk.sh") // pruned
+	write("scripts", "notes.txt")    // not a .sh
+
+	var names []string
+	for _, s := range Scripts(root, 2, DefaultPrune()) {
+		names = append(names, s.Name)
+	}
+	sort.Strings(names)
+	want := []string{"build.sh", filepath.Join("scripts", "sync.sh")}
+	if !eq(names, want) {
+		t.Errorf("Scripts = %v, want %v", names, want)
+	}
+}
+
 func TestDiscover_GroupsByParent(t *testing.T) {
 	root := t.TempDir()
 	mkGitRepo(t, filepath.Join(root, "edx-dev", "blendxapi"))

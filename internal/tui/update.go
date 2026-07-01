@@ -69,6 +69,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.log = msg.lines
 		}
 		return m, nil
+	case scriptDoneMsg:
+		if msg.err != nil {
+			m.statusLine = styleRed.Render("script " + msg.name + " failed: " + msg.err.Error())
+		} else {
+			m.statusLine = styleGreen.Render("ran " + msg.name)
+		}
+		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -82,6 +89,21 @@ func (m Model) loadContextCmd() tea.Cmd {
 		return nil
 	}
 	return tea.Batch(branchesCmd(r.repo.Path), logCmd(r.repo.Path, 50))
+}
+
+// runScriptCmd suspends the TUI, runs the highlighted script with `bash`
+// attached to the terminal (so its output is visible and it can be Ctrl-C'd),
+// then resumes the TUI when it exits.
+func (m Model) runScriptCmd() tea.Cmd {
+	if m.scriptCursor < 0 || m.scriptCursor >= len(m.scripts) {
+		return nil
+	}
+	s := m.scripts[m.scriptCursor]
+	c := exec.Command("bash", s.Path)
+	c.Dir = filepath.Dir(s.Path)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return scriptDoneMsg{name: s.Name, err: err}
+	})
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -107,8 +129,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = panelBranches
 	case "3":
 		m.focus = panelLog
+	case "4":
+		m.focus = panelScripts
 	case "tab":
-		m.focus = (m.focus + 1) % 3
+		m.focus = (m.focus + 1) % panelCount
 	case "down", "j":
 		// Navigate within the FOCUSED panel (repos vs. branches), so browsing
 		// branches doesn't move the repo cursor and reload the panels.
@@ -122,6 +146,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.branchCursor < len(m.branches)-1 {
 				m.branchCursor++
 			}
+		case panelScripts:
+			if m.scriptCursor < len(m.scripts)-1 {
+				m.scriptCursor++
+			}
 		}
 	case "up", "k":
 		switch m.focus {
@@ -133,6 +161,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case panelBranches:
 			if m.branchCursor > 0 {
 				m.branchCursor--
+			}
+		case panelScripts:
+			if m.scriptCursor > 0 {
+				m.scriptCursor--
 			}
 		}
 	case "J":
@@ -167,11 +199,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case " ":
-		// Jump into the highlighted repo's branches (space again returns to Repos).
-		if m.focus == panelRepos {
+		switch m.focus {
+		case panelScripts:
+			return m, m.runScriptCmd()
+		case panelRepos:
+			// Jump into the highlighted repo's branches.
 			m.focus = panelBranches
 			m.branchCursor = 0
-		} else {
+		default:
 			m.focus = panelRepos
 		}
 	case "F":

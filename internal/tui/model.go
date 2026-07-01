@@ -14,6 +14,8 @@ const (
 	panelRepos panel = iota
 	panelBranches
 	panelLog
+	panelScripts
+	panelCount // number of focusable panels
 )
 
 // repoVM is the per-repo view model.
@@ -36,17 +38,19 @@ type Model struct {
 	filtering       bool
 	filterAttention bool // show only repos with changes / ahead / behind
 	showHelp        bool
-	branches     []git.Branch
-	branchCursor int
-	log          []string
-	statusLine   string
+	branches        []git.Branch
+	branchCursor    int
+	log             []string
+	scripts         []discover.Script
+	scriptCursor    int
+	statusLine      string
 
 	sem           chan struct{}
 	width, height int
 }
 
-// New builds a Model from discovered repos.
-func New(cfg config.Config, repos []discover.Repo) Model {
+// New builds a Model from discovered repos and scripts.
+func New(cfg config.Config, repos []discover.Repo, scripts []discover.Script) Model {
 	vms := make([]*repoVM, len(repos))
 	for i, r := range repos {
 		vms[i] = &repoVM{repo: r}
@@ -56,10 +60,11 @@ func New(cfg config.Config, repos []discover.Repo) Model {
 		conc = 1
 	}
 	return Model{
-		cfg:   cfg,
-		repos: vms,
-		focus: panelRepos,
-		sem:   make(chan struct{}, conc),
+		cfg:     cfg,
+		repos:   vms,
+		scripts: scripts,
+		focus:   panelRepos,
+		sem:     make(chan struct{}, conc),
 	}
 }
 

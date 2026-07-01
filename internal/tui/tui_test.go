@@ -86,7 +86,7 @@ func loadAll(t *testing.T, m Model, w, h int) Model {
 
 func TestTUI_RendersReposAndQuits(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	tm := teatest.NewTestModel(t, New(cfg, repos), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("alpha")) && bytes.Contains(b, []byte("bravo"))
 	}, teatest.WithDuration(3*time.Second))
@@ -96,7 +96,7 @@ func TestTUI_RendersReposAndQuits(t *testing.T) {
 
 func TestTUI_CursorMovesDown(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	tm := teatest.NewTestModel(t, New(cfg, repos), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("alpha"))
 	}, teatest.WithDuration(3*time.Second))
@@ -115,7 +115,7 @@ var _ = strings.Split
 // of the old multi-select.
 func TestTUI_SpaceFocusesBranches(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos), 100, 30) // focus starts on Repos
+	m := loadAll(t, New(cfg, repos, nil), 100, 30) // focus starts on Repos
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
 	m = mm.(Model)
 	if m.focus != panelBranches {
@@ -129,7 +129,7 @@ func TestTUI_SpaceFocusesBranches(t *testing.T) {
 
 func TestTUI_FilterNarrowsList(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	tm := teatest.NewTestModel(t, New(cfg, repos), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("bravo"))
 	}, teatest.WithDuration(3*time.Second))
@@ -159,10 +159,41 @@ func TestTUI_FilterNarrowsList(t *testing.T) {
 	}
 }
 
+// The Scripts panel lists discovered scripts; j/k move its cursor and space
+// (when it's focused) builds a run command for the highlighted script.
+func TestTUI_ScriptsPanel(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	scripts := []discover.Script{
+		{Path: "/x/a.sh", Name: "a.sh"},
+		{Path: "/x/scripts/b.sh", Name: "scripts/b.sh"},
+	}
+	m := loadAll(t, New(cfg, repos, scripts), 100, 30)
+	m.focus = panelScripts
+
+	if v := stripANSI(m.View()); !strings.Contains(v, "a.sh") || !strings.Contains(v, "scripts/b.sh") {
+		t.Errorf("Scripts panel should render script names")
+	}
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = mm.(Model)
+	if m.scriptCursor != 1 {
+		t.Errorf("j in Scripts panel should move scriptCursor, got %d", m.scriptCursor)
+	}
+	// space in the Scripts panel yields a (non-nil) run command; it does not run here.
+	if m.runScriptCmd() == nil {
+		t.Errorf("expected a run command for the highlighted script")
+	}
+	// with no scripts, run is a no-op.
+	empty := loadAll(t, New(cfg, repos, nil), 100, 30)
+	empty.focus = panelScripts
+	if empty.runScriptCmd() != nil {
+		t.Errorf("runScriptCmd with no scripts should be nil")
+	}
+}
+
 // F toggles a filter that shows only repos with changes / ahead / behind.
 func TestTUI_AttentionFilter(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos), 100, 30)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
 	m.repos[0].status = git.RepoStatus{HasUpstream: true, DirtyCount: 2} // needs attention
 	m.repos[0].loaded = true
 	m.repos[1].status = git.RepoStatus{HasUpstream: true} // clean & in sync
@@ -189,7 +220,7 @@ func TestTUI_SyncSkipsDirtyRepo(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repos[0].Path, "dirty.txt"), []byte("z\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	tm := teatest.NewTestModel(t, New(cfg, repos), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("*1"))
 	}, teatest.WithDuration(3*time.Second))
@@ -204,7 +235,7 @@ func TestTUI_SyncSkipsDirtyRepo(t *testing.T) {
 func TestTUI_ShowsBranchesForHighlighted(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	gitCmd(t, repos[0].Path, "branch", "feature")
-	tm := teatest.NewTestModel(t, New(cfg, repos), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("feature")) && bytes.Contains(b, []byte("master"))
 	}, teatest.WithDuration(3*time.Second))
@@ -214,7 +245,7 @@ func TestTUI_ShowsBranchesForHighlighted(t *testing.T) {
 
 func TestTUI_ShowsLogForHighlighted(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	tm := teatest.NewTestModel(t, New(cfg, repos), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("init"))
 	}, teatest.WithDuration(3*time.Second))
@@ -227,7 +258,7 @@ func TestTUI_ShowsLogForHighlighted(t *testing.T) {
 func TestTUI_LinesFitWidth(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	for _, w := range []int{80, 100, 160, 200} {
-		m := loadAll(t, New(cfg, repos), w, 30)
+		m := loadAll(t, New(cfg, repos, nil), w, 30)
 		for _, line := range strings.Split(m.View(), "\n") {
 			if got := lipgloss.Width(line); got > w {
 				t.Errorf("w=%d: line width %d > %d: %q", w, got, w, line)
@@ -242,7 +273,7 @@ func TestTUI_LinesFitWidth(t *testing.T) {
 func TestTUI_RepoRowsFitPanelContent(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	for _, w := range []int{80, 81, 82, 83, 100, 160, 200} {
-		m := loadAll(t, New(cfg, repos), w, 30)
+		m := loadAll(t, New(cfg, repos, nil), w, 30)
 		d := computeDims(w, 30)
 		content := d.leftW - 2 // panelStyle Padding(0,1) → content area is leftW-2
 		for _, line := range strings.Split(m.renderRepoBody(d), "\n") {
@@ -281,19 +312,19 @@ func TestTUI_DecorativeGlyphsAreASCII(t *testing.T) {
 	}
 	// cursor prefix via a rendered highlighted row
 	cfg, repos := twoRepos(t)
-	m := New(cfg, repos)
+	m := New(cfg, repos, nil)
 	if row := stripANSI(m.renderRow(0, m.repos[0], 12)); !isASCII(row) {
 		t.Errorf("renderRow (cursor row) = %q is not ASCII", row)
 	}
 }
 
-// The three panels must display their number so the 1/2/3 focus keys are
+// The four panels must display their number so the 1/2/3/4 focus keys are
 // discoverable.
 func TestTUI_PanelsShowNumbers(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos), 120, 40)
+	m := loadAll(t, New(cfg, repos, nil), 120, 40)
 	view := stripANSI(m.View())
-	for _, want := range []string{"[1] Repos", "[2] Branches", "[3] Log"} {
+	for _, want := range []string{"[1] Repos", "[2] Branches", "[3] Log", "[4] Scripts"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("View missing panel label %q", want)
 		}
@@ -304,7 +335,7 @@ func TestTUI_PanelsShowNumbers(t *testing.T) {
 // long branch names / commit lines can't wrap and grow the panel off-axis.
 func TestTUI_PanelLinesFitContentWidth(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos), 100, 30)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
 	m.branches = []git.Branch{{Name: strings.Repeat("b", 300)}}
 	m.log = []string{strings.Repeat("x", 300)}
 	content := computeDims(100, 30).rightW - 2
@@ -321,7 +352,7 @@ func TestTUI_PanelLinesFitContentWidth(t *testing.T) {
 // (which would reload the panels and make branches "change on every keystroke").
 func TestTUI_BranchNavIsPanelScoped(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos), 100, 30)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
 	m.branches = []git.Branch{{Name: "a"}, {Name: "b"}, {Name: "c"}}
 	m.focus = panelBranches
 	startRepo := m.cursor
@@ -357,7 +388,7 @@ func TestTUI_SyncGlyphModes(t *testing.T) {
 // ? opens a help overlay explaining the status glyphs and keys; any other key closes it.
 func TestTUI_HelpOverlay(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos), 100, 30)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	m = mm.(Model)
 	if !m.showHelp {

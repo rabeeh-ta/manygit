@@ -37,9 +37,9 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 
 | Key | Action |
 |---|---|
-| `1` `2` `3`, `tab` | focus the Repos / Branches / Log panel |
+| `1` `2` `3` `4`, `tab` | focus the Repos / Branches / Log / Scripts panel |
 | `j`/`k`, `↑`/`↓` | move within the focused panel |
-| `space` | jump to the highlighted repo's branches (`space` again returns to Repos) |
+| `space` | Repos panel → view branches · Scripts panel → run the script · else → back to Repos |
 | `F` | toggle: show only repos with changes / ahead / behind |
 | `/` | filter repos by name; `esc` clears |
 | `s` | sync the highlighted repo (fetch + `pull --ff-only`; dirty repos skipped) |
@@ -65,6 +65,15 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 Ahead/behind use `↑`/`↓` by default. Those are East-Asian *ambiguous* width —
 if your terminal renders them two cells wide, the column drifts; set
 `status_glyphs: ascii` (below) to use the always-aligned `+N` / `-N` instead.
+
+## Scripts panel
+
+The `[4] Scripts` panel (below Repos) lists `*.sh` files found near the root —
+root-level and one directory deep (e.g. `scripts/*.sh`), pruning
+`node_modules`/`.git`/etc. Focus it with `4`, move with `j`/`k`, and press
+`space` to **run** the highlighted script: manygit suspends, runs it with
+`bash` attached to your terminal (so you see its output and can `Ctrl-C` it),
+and resumes when it exits. The result shows in the status line.
 
 ## Config (optional)
 

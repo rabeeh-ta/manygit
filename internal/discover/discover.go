@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // Repo is a discovered git repository.
@@ -94,4 +95,51 @@ func Discover(root string, opts Options) ([]Repo, error) {
 		return repos[i].Name < repos[j].Name
 	})
 	return repos, nil
+}
+
+// Script is a shell script discovered under the root.
+type Script struct {
+	Path string // absolute path
+	Name string // path relative to root, e.g. "scripts/sync-edx.sh"
+}
+
+// Scripts finds *.sh files under root up to maxDepth directory levels (a file
+// directly in root is depth 1, in root/scripts/ is depth 2), pruning the same
+// junk directories as Discover. Results are sorted by relative name.
+func Scripts(root string, maxDepth int, prune map[string]bool) []Script {
+	root = filepath.Clean(root)
+	if prune == nil {
+		prune = DefaultPrune()
+	}
+	var out []Script
+	var walk func(dir string, depth int)
+	walk = func(dir string, depth int) {
+		if depth > maxDepth {
+			return
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() {
+				if !prune[name] {
+					walk(filepath.Join(dir, name), depth+1)
+				}
+				continue
+			}
+			if strings.HasSuffix(name, ".sh") {
+				full := filepath.Join(dir, name)
+				rel, err := filepath.Rel(root, full)
+				if err != nil {
+					rel = name
+				}
+				out = append(out, Script{Path: full, Name: rel})
+			}
+		}
+	}
+	walk(root, 1)
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }

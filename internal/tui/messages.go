@@ -41,3 +41,8 @@ type checkoutDoneMsg struct {
 	branch string
 	err    error
 }
+
+type scriptDoneMsg struct {
+	name string
+	err  error
+}
