@@ -14,8 +14,17 @@ const (
 	panelRepos    panel = iota // key 1
 	panelScripts               // key 2
 	panelBranches              // key 3
-	panelLog                   // key 4
+	panelBottom                // keys 4/5/6 (multi-view: graph / changes / output)
 	panelCount                 // number of focusable panels
+)
+
+// bottomView is which view the multi-view bottom-right slot shows.
+type bottomView int
+
+const (
+	bvGraph   bottomView = iota // key 4
+	bvChanges                   // key 5
+	bvOutput                    // key 6
 )
 
 // repoVM is the per-repo view model.
@@ -39,15 +48,36 @@ type Model struct {
 	filterAttention bool // show only repos with changes / ahead / behind
 	showHelp        bool
 	showGraph       bool // full-screen commit graph overlay
-	graphLines      []string
-	graphOffset     int
-	branches        []git.Branch
-	branchCursor    int
-	log             []string
-	scripts         []discover.Script
-	scriptCursor    int
-	statusLine      string
-	statusGen       int // bumped on each status set; guards the expiry timer
+
+	// bottom multi-view slot
+	bottomView bottomView
+
+	// graph view (4): colored git log --graph with a selectable commit cursor.
+	// selectable entries are [WIP, commits...]; graphSel 0 == WIP.
+	graphLines   []string
+	graphCommits []git.GraphEntry
+	graphSel     int
+	graphOffset  int // scroll offset for the full-screen `g` overlay
+
+	// changes view (5): files of the selected graph entry, with an in-place diff.
+	changeFiles    []git.FileChange
+	changeCursor   int
+	changeShowDiff bool
+	changeDiff     []string
+	changeDiffOff  int
+
+	// output view (6): captured stdout+stderr of the last script run (Phase 2).
+	outputLines   []string
+	outputTitle   string
+	outputOffset  int
+	outputRunning bool
+
+	branches     []git.Branch
+	branchCursor int
+	scripts      []discover.Script
+	scriptCursor int
+	statusLine   string
+	statusGen    int // bumped on each status set; guards the expiry timer
 
 	sem           chan struct{}
 	width, height int

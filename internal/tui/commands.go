@@ -41,18 +41,40 @@ func branchesCmd(path string) tea.Cmd {
 	}
 }
 
-func logCmd(path string, limit int) tea.Cmd {
+// graphCmd loads the colored graph plus its commit entries (line index + hash).
+func graphCmd(path string, limit int) tea.Cmd {
 	return func() tea.Msg {
-		lines, err := git.GraphLog(path, limit)
-		return logMsg{path: path, lines: lines, err: err}
+		lines, commits, err := git.GraphLogEntries(path, limit)
+		return graphMsg{path: path, lines: lines, commits: commits, err: err}
 	}
 }
 
-// graphCmd loads a larger colored graph for the full-screen graph view.
-func graphCmd(path string, limit int) tea.Cmd {
+// changesCmd loads the changed files of the selected graph entry. ref == ""
+// means the working tree (WIP); otherwise a commit hash.
+func changesCmd(path, ref string) tea.Cmd {
 	return func() tea.Msg {
-		lines, err := git.GraphLog(path, limit)
-		return graphMsg{path: path, lines: lines, err: err}
+		var files []git.FileChange
+		var err error
+		if ref == "" {
+			files, err = git.StatusFiles(path)
+		} else {
+			files, err = git.CommitFiles(path, ref)
+		}
+		return changesMsg{path: path, ref: ref, files: files, err: err}
+	}
+}
+
+// diffCmd loads the colored diff of one file for the selected graph entry.
+func diffCmd(path, ref, file string) tea.Cmd {
+	return func() tea.Msg {
+		var lines []string
+		var err error
+		if ref == "" {
+			lines, err = git.WorkingFileDiff(path, file)
+		} else {
+			lines, err = git.CommitFileDiff(path, ref, file)
+		}
+		return diffMsg{path: path, ref: ref, lines: lines, err: err}
 	}
 }
 

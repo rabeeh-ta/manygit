@@ -37,9 +37,11 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 
 | Key | Action |
 |---|---|
-| `1` `2` `3` `4`, `tab` | focus the Repos / Scripts / Branches / Log panel |
+| `1` `2` `3`, `tab` | focus Repos / Scripts / Branches (tab cycles all slots) |
+| `4` `5` `6` | bottom slot: **Graph** / **Changes** / **Output** |
 | `j`/`k`, `↑`/`↓` | move within the focused panel |
 | `space` | Repos panel → view branches · Scripts panel → run the script · else → back to Repos |
+| `enter` | Changes view: open the highlighted file's diff in-place (`esc` = back) |
 | `g` | full-screen colored commit graph (`j`/`k` scroll, `esc`/`g` close) |
 | `F` | toggle: show only repos with changes / ahead / behind |
 | `/` | filter repos by name; `esc` clears |
@@ -66,6 +68,19 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 Ahead/behind use `↑`/`↓` by default. Those are East-Asian *ambiguous* width —
 if your terminal renders them two cells wide, the column drifts; set
 `status_glyphs: ascii` (below) to use the always-aligned `+N` / `-N` instead.
+
+## Bottom panel (Graph / Changes / Output)
+
+The bottom-right slot is a multi-view panel switched with number keys:
+
+- **`4` Graph** — the colored `git log --graph` with a selection cursor. The top
+  entry is `WIP (uncommitted changes)`; below it are commits. `j`/`k` move the
+  cursor between commits (connector lines are skipped). The selected entry drives
+  the Changes view.
+- **`5` Changes** — the changed files of the selected graph entry: the working
+  tree (when WIP is selected) or a commit's files. `j`/`k` pick a file; `enter`
+  opens its colored diff in-place; `esc` returns to the list.
+- **`6` Output** — captured output of the last script run (not yet wired; script runs currently open in the terminal — see Scripts panel).
 
 ## Scripts panel
 

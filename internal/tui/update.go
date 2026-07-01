@@ -68,15 +68,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case logMsg:
-		if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == msg.path {
-			m.log = msg.lines
-		}
-		return m, nil
 	case graphMsg:
 		if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == msg.path {
 			m.graphLines = msg.lines
+			m.graphCommits = msg.commits
+			m.graphSel = 0
 			m.graphOffset = 0
+		}
+		return m, nil
+	case changesMsg:
+		if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == msg.path {
+			m.changeFiles = msg.files
+			m.changeCursor = 0
+			m.changeShowDiff = false
+		}
+		return m, nil
+	case diffMsg:
+		// Drop a stale diff (repo or graph selection changed while it loaded).
+		if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == msg.path && m.selectedRef() == msg.ref {
+			m.changeDiff = msg.lines
+			m.changeDiffOff = 0
+			m.changeShowDiff = true
 		}
 		return m, nil
 	case scriptDoneMsg:
@@ -99,13 +111,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// loadContextCmd loads branches + log for the highlighted repo.
+// loadContextCmd loads branches + the commit graph for the highlighted repo.
 func (m Model) loadContextCmd() tea.Cmd {
 	r := m.currentVisible(m.visibleRepos())
 	if r == nil {
 		return nil
 	}
-	return tea.Batch(branchesCmd(r.repo.Path), logCmd(r.repo.Path, 50))
+	return tea.Batch(branchesCmd(r.repo.Path), graphCmd(r.repo.Path, 200))
+}
+
+// selectedRef returns the git ref the graph cursor is on: "" for WIP (working
+// tree), otherwise the selected commit's hash.
+func (m Model) selectedRef() string {
+	if m.graphSel <= 0 || m.graphSel-1 >= len(m.graphCommits) {
+		return ""
+	}
+	return m.graphCommits[m.graphSel-1].Hash
+}
+
+// loadChangesCmd loads the changed files of the currently-selected graph entry.
+func (m Model) loadChangesCmd() tea.Cmd {
+	r := m.currentVisible(m.visibleRepos())
+	if r == nil {
+		return nil
+	}
+	return changesCmd(r.repo.Path, m.selectedRef())
 }
 
 // runScriptCmd suspends the TUI, runs the highlighted script with `bash`
@@ -158,13 +188,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.showHelp = true
 	case "g":
-		// Full-screen colored commit graph of the highlighted repo.
+		// Full-screen colored commit graph (reuses the loaded graph).
 		m.showGraph = true
 		m.graphOffset = 0
-		m.graphLines = nil // don't flash the previous repo's graph while loading
-		if r := m.currentVisible(vis); r != nil {
-			return m, graphCmd(r.repo.Path, 400)
-		}
 	case "1":
 		m.focus = panelRepos
 	case "2":
@@ -172,7 +198,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "3":
 		m.focus = panelBranches
 	case "4":
-		m.focus = panelLog
+		m.focus = panelBottom
+		m.bottomView = bvGraph
+	case "5":
+		m.focus = panelBottom
+		m.bottomView = bvChanges
+		m.changeShowDiff = false
+		return m, m.loadChangesCmd()
+	case "6":
+		m.focus = panelBottom
+		m.bottomView = bvOutput
 	case "tab":
 		m.focus = (m.focus + 1) % panelCount
 	case "down", "j":
@@ -192,6 +227,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.scriptCursor < len(m.scripts)-1 {
 				m.scriptCursor++
 			}
+		case panelBottom:
+			m.bottomScroll(1)
 		}
 	case "up", "k":
 		switch m.focus {
@@ -208,6 +245,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.scriptCursor > 0 {
 				m.scriptCursor--
 			}
+		case panelBottom:
+			m.bottomScroll(-1)
 		}
 	case "J":
 		if m.focus == panelBranches && m.branchCursor < len(m.branches)-1 {
@@ -217,20 +256,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focus == panelBranches && m.branchCursor > 0 {
 			m.branchCursor--
 		}
-	case "b", "enter":
-		if r := m.currentVisible(vis); r != nil && m.focus == panelBranches && m.branchCursor < len(m.branches) {
-			if r.status.DirtyCount > 0 {
-				exp := m.setStatus(styleOrange.Render("checkout skipped: dirty working tree"))
-				return m, exp
+	case "enter":
+		// In the Changes view, enter opens the selected file's diff in-place.
+		if m.focus == panelBottom && m.bottomView == bvChanges && !m.changeShowDiff {
+			if r := m.currentVisible(vis); r != nil && m.changeCursor < len(m.changeFiles) {
+				return m, diffCmd(r.repo.Path, m.selectedRef(), m.changeFiles[m.changeCursor].Path)
 			}
-			target := m.branches[m.branchCursor]
-			name := target.Name
-			if target.IsRemote {
-				if idx := strings.LastIndex(name, "/"); idx >= 0 {
-					name = name[idx+1:]
-				}
-			}
-			return m, checkoutCmd(m.sem, r.repo.Path, name)
+			return m, nil
+		}
+		cmd := m.checkoutSelected(vis)
+		return m, cmd
+	case "b":
+		cmd := m.checkoutSelected(vis)
+		return m, cmd
+	case "esc":
+		// Close the in-place diff, back to the file list.
+		if m.focus == panelBottom && m.bottomView == bvChanges && m.changeShowDiff {
+			m.changeShowDiff = false
 		}
 	case "o":
 		if r := m.currentVisible(vis); r != nil {
@@ -324,6 +366,52 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func baseName(p string) string { return filepath.Base(p) }
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+// bottomScroll moves the cursor/scroll of the active bottom view by delta.
+func (m *Model) bottomScroll(delta int) {
+	switch m.bottomView {
+	case bvGraph:
+		m.graphSel = clampInt(m.graphSel+delta, 0, len(m.graphCommits)) // 0 == WIP
+	case bvChanges:
+		if m.changeShowDiff {
+			m.changeDiffOff = clampInt(m.changeDiffOff+delta, 0, max(0, len(m.changeDiff)-1))
+		} else {
+			m.changeCursor = clampInt(m.changeCursor+delta, 0, max(0, len(m.changeFiles)-1))
+		}
+	case bvOutput:
+		m.outputOffset = clampInt(m.outputOffset+delta, 0, max(0, len(m.outputLines)-1))
+	}
+}
+
+// checkoutSelected checks out the highlighted branch when the Branches panel is
+// focused; nil (with an optional status set) otherwise.
+func (m *Model) checkoutSelected(vis []*repoVM) tea.Cmd {
+	r := m.currentVisible(vis)
+	if r == nil || m.focus != panelBranches || m.branchCursor >= len(m.branches) {
+		return nil
+	}
+	if r.status.DirtyCount > 0 {
+		return m.setStatus(styleOrange.Render("checkout skipped: dirty working tree"))
+	}
+	target := m.branches[m.branchCursor]
+	name := target.Name
+	if target.IsRemote {
+		if idx := strings.LastIndex(name, "/"); idx >= 0 {
+			name = name[idx+1:]
+		}
+	}
+	return checkoutCmd(m.sem, r.repo.Path, name)
+}
 
 // targets returns the repo actions apply to: the highlighted (cursor) repo.
 func (m Model) targets() []*repoVM {

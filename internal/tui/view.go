@@ -200,13 +200,112 @@ func (m Model) renderBranches(contentW int) string {
 	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
 }
 
-func (m Model) renderLog(contentW int) string {
-	var b strings.Builder
-	for _, line := range m.log {
-		b.WriteString(line + "\n")
+// renderBottom renders the active view of the multi-view bottom slot.
+func (m Model) renderBottom(contentW, innerH int) string {
+	switch m.bottomView {
+	case bvChanges:
+		return m.renderChangesView(contentW, innerH)
+	case bvOutput:
+		return m.renderOutputView(contentW, innerH)
+	default:
+		return m.renderGraphView(contentW, innerH)
 	}
-	// Truncate long graph-log lines to the panel content width (no wrap).
+}
+
+// window returns lines[start:end] so that keepVisible sits inside a height-h
+// window, and the start index.
+func window(n, keepVisible, h int) (start, end int) {
+	if keepVisible >= h {
+		start = keepVisible - h + 1
+	}
+	end = start + h
+	if end > n {
+		end = n
+	}
+	if start > n {
+		start = n
+	}
+	return start, end
+}
+
+// renderGraphView shows the colored graph with a synthetic WIP entry on top and
+// a selection cursor that snaps to commits; the selected entry stays visible.
+func (m Model) renderGraphView(contentW, innerH int) string {
+	focused := m.focus == panelBottom
+	texts := []string{styleYellow.Render("WIP (uncommitted changes)")}
+	texts = append(texts, m.graphLines...)
+
+	selIdx := 0 // render index of the selected entry (0 = WIP)
+	if m.graphSel >= 1 && m.graphSel-1 < len(m.graphCommits) {
+		selIdx = m.graphCommits[m.graphSel-1].Line + 1 // +1 for the WIP row
+	}
+	start, end := window(len(texts), selIdx, innerH)
+
+	var b strings.Builder
+	for i := start; i < end; i++ {
+		cur := "  "
+		if focused && i == selIdx {
+			cur = styleCursor.Render("> ")
+		}
+		b.WriteString(cur + texts[i] + "\n")
+	}
 	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
+}
+
+// colorStatus colors a git status letter (A/D/M/R/??).
+func colorStatus(s string) string {
+	switch {
+	case s == "A" || s == "??":
+		return styleGreen.Render(s)
+	case s == "D":
+		return styleRed.Render(s)
+	case strings.HasPrefix(s, "R"):
+		return styleCyan.Render(s)
+	default:
+		return styleYellow.Render(s)
+	}
+}
+
+// renderChangesView shows the changed files of the selected graph entry, or the
+// selected file's in-place diff.
+func (m Model) renderChangesView(contentW, innerH int) string {
+	if m.changeShowDiff {
+		start, end := window(len(m.changeDiff), m.changeDiffOff, innerH)
+		return lipgloss.NewStyle().MaxWidth(contentW).Render(strings.Join(m.changeDiff[start:end], "\n"))
+	}
+	if len(m.changeFiles) == 0 {
+		what := "working tree"
+		if ref := m.selectedRef(); ref != "" {
+			what = "commit " + ref[:min(7, len(ref))]
+		}
+		return styleDim.Render("(no changes in " + what + ")")
+	}
+	focused := m.focus == panelBottom
+	start, end := window(len(m.changeFiles), m.changeCursor, innerH)
+	var b strings.Builder
+	for i := start; i < end; i++ {
+		f := m.changeFiles[i]
+		cur := "  "
+		if focused && i == m.changeCursor {
+			cur = styleCursor.Render("> ")
+		}
+		sc := f.Status // already short, but cap so the Width(3) cell can't wrap
+		if len(sc) > 2 {
+			sc = sc[:2]
+		}
+		st := lipgloss.NewStyle().Width(3).Render(colorStatus(sc))
+		b.WriteString(cur + st + f.Path + "\n")
+	}
+	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
+}
+
+// renderOutputView shows captured script output (Phase 2).
+func (m Model) renderOutputView(contentW, innerH int) string {
+	if len(m.outputLines) == 0 {
+		return styleDim.Render("(run a script from [2] Scripts to see its output here)")
+	}
+	start, end := window(len(m.outputLines), m.outputOffset, innerH)
+	return lipgloss.NewStyle().MaxWidth(contentW).Render(strings.Join(m.outputLines[start:end], "\n"))
 }
 
 func (m Model) renderScripts(contentW int) string {
@@ -257,13 +356,19 @@ func (m Model) helpView() string {
 		styleTitle.Render("manygit — help"),
 		"",
 		styleGroup.Render("Panels & navigation"),
-		row("1 / 2 / 3 / 4", "focus the Repos / Scripts / Branches / Log panel"),
+		row("1 / 2 / 3", "focus Repos / Scripts / Branches"),
+		row("4 / 5 / 6", "bottom slot: Graph / Changes / Output"),
 		row("tab", "cycle panels"),
 		row("j / k", "move within the FOCUSED panel"),
 		row("space", "Repos → branches · Scripts → run it · else back to Repos"),
 		row("g", "full-screen colored commit graph (j/k scroll · esc closes)"),
 		row("F", "toggle: show only changed / out-of-sync repos"),
 		row("/", "filter repos by name (esc clears)"),
+		"",
+		styleGroup.Render("Graph (4) & Changes (5)"),
+		row("4  j/k", "select a commit — or WIP (uncommitted) at the top"),
+		row("5", "show the selected entry's changed files"),
+		row("5  enter", "open the highlighted file's diff in-place (esc = back)"),
 		"",
 		styleGroup.Render("Actions") + styleDim.Render("  — apply to the highlighted (>) repo"),
 		row("s", "sync: fetch + pull --ff-only   (dirty repos skipped)"),
@@ -368,9 +473,17 @@ func (m Model) View() string {
 	botInner := max((d.bodyH-2)-topInner, 3)
 	branches := titledPanel(3, "Branches", d.rightW, topInner, m.focus == panelBranches,
 		clampLines(m.renderBranches(d.rightW-2), topInner))
-	logp := titledPanel(4, "Log", d.rightW, botInner, m.focus == panelLog,
-		clampLines(m.renderLog(d.rightW-2), botInner))
-	right := lipgloss.JoinVertical(lipgloss.Left, branches, logp)
+	// bottom multi-view slot: 4 Graph / 5 Changes / 6 Output
+	bnum, btitle := 4, "Graph"
+	switch m.bottomView {
+	case bvChanges:
+		bnum, btitle = 5, "Changes"
+	case bvOutput:
+		bnum, btitle = 6, "Output"
+	}
+	bottom := titledPanel(bnum, btitle, d.rightW, botInner, m.focus == panelBottom,
+		clampLines(m.renderBottom(d.rightW-2, botInner), botInner))
+	right := lipgloss.JoinVertical(lipgloss.Left, branches, bottom)
 
 	cols := lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gutter), right)
 	view := lipgloss.JoinVertical(lipgloss.Left, title, "", cols, m.statusOrFilterLine())

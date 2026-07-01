@@ -175,6 +175,86 @@ func TestCheckout_SwitchesBranch(t *testing.T) {
 	}
 }
 
+func TestStatusFiles(t *testing.T) {
+	dir := initRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files, err := StatusFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := map[string]string{}
+	for _, f := range files {
+		byPath[f.Path] = f.Status
+	}
+	if byPath["a.txt"] != "M" {
+		t.Errorf("a.txt status = %q, want M", byPath["a.txt"])
+	}
+	if byPath["new.txt"] != "??" {
+		t.Errorf("new.txt status = %q, want ??", byPath["new.txt"])
+	}
+}
+
+func TestCommitFiles(t *testing.T) {
+	dir := initRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-q", "-m", "add b")
+	files, err := CommitFiles(dir, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Path != "b.txt" || files[0].Status != "A" {
+		t.Errorf("CommitFiles = %+v, want [{A b.txt}]", files)
+	}
+}
+
+func TestGraphLogEntries(t *testing.T) {
+	dir := initRepo(t)
+	lines, commits, err := GraphLogEntries(dir, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) == 0 || len(commits) == 0 {
+		t.Fatalf("expected lines and commits, got %d lines, %d commits", len(lines), len(commits))
+	}
+	for _, c := range commits {
+		if c.Line < 0 || c.Line >= len(lines) {
+			t.Errorf("commit line index %d out of range", c.Line)
+		}
+		if len(c.Hash) < 7 {
+			t.Errorf("bad hash %q", c.Hash)
+		}
+	}
+}
+
+func TestFileDiffs(t *testing.T) {
+	dir := initRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello\nworld\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wd, err := WorkingFileDiff(dir, "a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(wd, "\n"), "world") {
+		t.Errorf("working diff should show added 'world': %v", wd)
+	}
+	cd, err := CommitFileDiff(dir, "HEAD", "a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(cd, "\n"), "hello") {
+		t.Errorf("commit diff should show 'hello': %v", cd)
+	}
+}
+
 func TestGraphLog_ReturnsCommits(t *testing.T) {
 	dir := initRepo(t)
 	lines, err := GraphLog(dir, 10)

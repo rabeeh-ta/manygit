@@ -30,8 +30,19 @@ type branchesMsg struct {
 	err      error
 }
 
-type logMsg struct {
+// changesMsg carries the changed files of the selected graph entry (ref==""=WIP).
+type changesMsg struct {
 	path  string
+	ref   string
+	files []git.FileChange
+	err   error
+}
+
+// diffMsg carries the colored diff lines of one selected file. path/ref identify
+// the repo + graph entry it was loaded for, so a stale async diff is dropped.
+type diffMsg struct {
+	path  string
+	ref   string
 	lines []string
 	err   error
 }
@@ -52,9 +63,10 @@ type statusExpireMsg struct {
 	gen int
 }
 
-// graphMsg carries a larger colored graph for the full-screen graph view.
+// graphMsg carries the colored graph lines plus commit entries for the graph view.
 type graphMsg struct {
-	path  string
-	lines []string
-	err   error
+	path    string
+	lines   []string
+	commits []git.GraphEntry
+	err     error
 }

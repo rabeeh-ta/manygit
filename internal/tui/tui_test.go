@@ -225,27 +225,27 @@ func TestTUI_BranchNamesTruncated(t *testing.T) {
 	}
 }
 
-// g opens a full-screen graph overlay; graphMsg populates it, j/k scroll, esc closes.
+// g opens a full-screen graph overlay over the already-loaded graph; j/k scroll,
+// esc closes.
 func TestTUI_GraphOverlay(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 100, 30)
-
-	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	// simulate loadContextCmd having loaded the graph
+	path := m.currentVisible(m.visibleRepos()).repo.Path
+	mm, _ := m.Update(graphMsg{path: path, lines: []string{"* a", "* b", "* c"},
+		commits: []git.GraphEntry{{Line: 0, Hash: "aaaaaaa"}, {Line: 1, Hash: "bbbbbbb"}, {Line: 2, Hash: "ccccccc"}}})
+	m = mm.(Model)
+	if len(m.graphLines) != 3 || len(m.graphCommits) != 3 {
+		t.Fatalf("graphMsg should populate graph, got %d lines %d commits", len(m.graphLines), len(m.graphCommits))
+	}
+	// g opens the overlay (reusing the loaded graph)
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
 	m = mm.(Model)
 	if !m.showGraph {
 		t.Fatal("g should open the graph overlay")
 	}
-	if cmd == nil {
-		t.Fatal("g should dispatch a graph-load command")
-	}
-	path := m.currentVisible(m.visibleRepos()).repo.Path
-	mm, _ = m.Update(graphMsg{path: path, lines: []string{"* a", "* b", "* c"}})
-	m = mm.(Model)
-	if len(m.graphLines) != 3 {
-		t.Fatalf("graphMsg should populate graphLines, got %d", len(m.graphLines))
-	}
 	if !strings.Contains(stripANSI(m.View()), "Graph:") {
-		t.Error("graph view should show a Graph: title")
+		t.Error("graph overlay should show a Graph: title")
 	}
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = mm.(Model)
@@ -255,6 +255,69 @@ func TestTUI_GraphOverlay(t *testing.T) {
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if mm.(Model).showGraph {
 		t.Error("esc should close the graph overlay")
+	}
+}
+
+// The bottom multi-view slot: 4 Graph (with commit/WIP selection) -> 5 Changes
+// (files of the selection) -> enter opens the diff -> esc back; 6 Output.
+func TestTUI_BottomViewsAndSelection(t *testing.T) {
+	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	path := m.currentVisible(m.visibleRepos()).repo.Path
+	mm, _ := m.Update(graphMsg{path: path, lines: []string{"* aaaaaaa fix", "* bbbbbbb add"},
+		commits: []git.GraphEntry{{Line: 0, Hash: "aaaaaaa"}, {Line: 1, Hash: "bbbbbbb"}}})
+	m = mm.(Model)
+
+	mm, _ = m.Update(rk("4"))
+	m = mm.(Model)
+	if m.focus != panelBottom || m.bottomView != bvGraph {
+		t.Fatal("4 should focus the graph view")
+	}
+	if m.selectedRef() != "" {
+		t.Errorf("WIP ref should be empty, got %q", m.selectedRef())
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown}) // WIP -> first commit
+	m = mm.(Model)
+	if m.graphSel != 1 || m.selectedRef() != "aaaaaaa" {
+		t.Errorf("j should select aaaaaaa, sel=%d ref=%q", m.graphSel, m.selectedRef())
+	}
+	mm, cmd := m.Update(rk("5"))
+	m = mm.(Model)
+	if m.bottomView != bvChanges || cmd == nil {
+		t.Fatal("5 should switch to Changes and load the selection's files")
+	}
+	mm, _ = m.Update(changesMsg{path: path, ref: "aaaaaaa",
+		files: []git.FileChange{{Status: "M", Path: "foo.go"}, {Status: "A", Path: "bar.go"}}})
+	m = mm.(Model)
+	if len(m.changeFiles) != 2 {
+		t.Fatalf("changes should have 2 files, got %d", len(m.changeFiles))
+	}
+	mm, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm.(Model)
+	if cmd == nil {
+		t.Fatal("enter should load the selected file's diff")
+	}
+	mm, _ = m.Update(diffMsg{path: path, ref: "aaaaaaa", lines: []string{"@@ -1 +1 @@", "-old", "+new"}})
+	m = mm.(Model)
+	if !m.changeShowDiff || len(m.changeDiff) != 3 {
+		t.Fatal("diffMsg should show the diff in-place")
+	}
+	// a stale diff (wrong ref) must be dropped
+	m.changeShowDiff = false
+	mm, _ = m.Update(diffMsg{path: path, ref: "zzzzzzz", lines: []string{"stale"}})
+	if mm.(Model).changeShowDiff {
+		t.Error("a stale diff (wrong ref) should be dropped")
+	}
+	m.changeShowDiff = true
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = mm.(Model)
+	if m.changeShowDiff {
+		t.Error("esc should close the diff")
+	}
+	mm, _ = m.Update(rk("6"))
+	if mm.(Model).bottomView != bvOutput {
+		t.Error("6 should switch to Output")
 	}
 }
 
@@ -420,22 +483,28 @@ func TestTUI_PanelsShowNumbers(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 120, 40)
 	view := stripANSI(m.View())
-	for _, want := range []string{"[1] Repos", "[2] Scripts", "[3] Branches", "[4] Log"} {
+	for _, want := range []string{"[1] Repos", "[2] Scripts", "[3] Branches", "[4] Graph"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("View missing panel label %q", want)
 		}
 	}
 }
 
-// Branch and log panel lines must be truncated to the panel content width so
-// long branch names / commit lines can't wrap and grow the panel off-axis.
+// Right-column panel lines must be truncated to the panel content width so long
+// branch names / graph lines / file paths can't wrap and grow the panel off-axis.
 func TestTUI_PanelLinesFitContentWidth(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 100, 30)
 	m.branches = []git.Branch{{Name: strings.Repeat("b", 300)}}
-	m.log = []string{strings.Repeat("x", 300)}
+	m.graphLines = []string{strings.Repeat("x", 300)}
+	m.changeFiles = []git.FileChange{{Status: "M", Path: strings.Repeat("p", 300)}}
 	content := computeDims(100, 30).rightW - 2
-	for _, block := range []string{m.renderBranches(content), m.renderLog(content)} {
+	blocks := []string{
+		m.renderBranches(content),
+		m.renderGraphView(content, 10),
+		m.renderChangesView(content, 10),
+	}
+	for _, block := range blocks {
 		for _, line := range strings.Split(block, "\n") {
 			if got := lipgloss.Width(line); got > content {
 				t.Errorf("panel line width %d exceeds content %d: %q", got, content, line)

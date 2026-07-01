@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -162,6 +163,114 @@ func Checkout(dir, branch string) error {
 func GraphLog(dir string, limit int) ([]string, error) {
 	out, err := run(dir, "log", "--graph", "--oneline", "--decorate", "--all",
 		"--color=always", fmt.Sprintf("-n%d", limit))
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(out, "\n"), nil
+}
+
+// FileChange is one changed file with its short status (e.g. "M", "A", "D", "??").
+type FileChange struct {
+	Status string
+	Path   string
+}
+
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
+
+// GraphEntry marks which rendered graph line index is a commit, and its hash.
+type GraphEntry struct {
+	Line int
+	Hash string
+}
+
+// commitHashRe captures the abbreviated hash that follows the graph prefix on a
+// commit line (connector lines like "|\" or "| |" have no hash).
+var commitHashRe = regexp.MustCompile(`^[\s|/\\_*]*([0-9a-f]{7,40})\b`)
+
+// GraphLogEntries returns the colored graph lines plus, for each line that is a
+// commit, its index and hash (so the TUI can put a selection cursor on commits
+// and skip connector lines).
+func GraphLogEntries(dir string, limit int) (lines []string, commits []GraphEntry, err error) {
+	lines, err = GraphLog(dir, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+	for i, ln := range lines {
+		if m := commitHashRe.FindStringSubmatch(stripANSI(ln)); m != nil {
+			commits = append(commits, GraphEntry{Line: i, Hash: m[1]})
+		}
+	}
+	return lines, commits, nil
+}
+
+// StatusFiles returns the working-tree changes. Uses `--porcelain -z`: paths are
+// NUL-separated and unquoted (so spaces are safe), and a rename's two paths are
+// distinct fields rather than an "old -> new" string.
+func StatusFiles(dir string) ([]FileChange, error) {
+	out, err := run(dir, "status", "--porcelain", "-z")
+	if err != nil {
+		return nil, err
+	}
+	var files []FileChange
+	recs := strings.Split(out, "\x00")
+	for i := 0; i < len(recs); i++ {
+		rec := recs[i]
+		if len(rec) < 4 {
+			continue
+		}
+		status := strings.TrimSpace(rec[:2])
+		files = append(files, FileChange{Status: status, Path: rec[3:]})
+		if strings.ContainsAny(status, "RC") {
+			i++ // a rename/copy's original path follows in the next field; skip it
+		}
+	}
+	return files, nil
+}
+
+// CommitFiles returns the files changed in a commit (git show --name-status).
+func CommitFiles(dir, ref string) ([]FileChange, error) {
+	out, err := run(dir, "show", "--name-status", "--format=", ref)
+	if err != nil {
+		return nil, err
+	}
+	var files []FileChange
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		parts := strings.Split(ln, "\t")
+		if len(parts) < 2 {
+			continue
+		}
+		status := strings.TrimSpace(parts[0])
+		if len(status) > 1 {
+			status = status[:1] // "R100"/"C75" -> "R"/"C" (drop the similarity %)
+		}
+		files = append(files, FileChange{
+			Status: status,
+			Path:   strings.TrimSpace(parts[len(parts)-1]), // last field (handles renames)
+		})
+	}
+	return files, nil
+}
+
+// WorkingFileDiff returns the colored diff of a working-tree file vs HEAD.
+func WorkingFileDiff(dir, path string) ([]string, error) {
+	out, err := run(dir, "diff", "HEAD", "--color=always", "--", path)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(out) == "" {
+		return []string{"(no diff — untracked/new file, not yet tracked by git)"}, nil
+	}
+	return strings.Split(out, "\n"), nil
+}
+
+// CommitFileDiff returns the colored diff of a file within a commit.
+func CommitFileDiff(dir, ref, path string) ([]string, error) {
+	out, err := run(dir, "show", "--color=always", ref, "--", path)
 	if err != nil {
 		return nil, err
 	}
