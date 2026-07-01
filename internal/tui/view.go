@@ -37,29 +37,33 @@ func titledPanel(n int, title string, innerW, innerH int, focused bool, content 
 	return strings.Join(lines, "\n")
 }
 
-// syncGlyph is the concise, ASCII-only status token for a repo row. ASCII keeps
-// every glyph exactly one cell wide, so ambiguous-East-Asian-width terminals
-// (which render ▸ ● ↑ ↓ ✓ two cells wide) can't shift columns:
+// syncGlyph is the concise status token for a repo row. Ahead/behind use ↑/↓
+// when unicode=true (nicer, but East-Asian-ambiguous width — may render two
+// cells wide and drift columns in some terminals) or alignment-safe ASCII +/-
+// when unicode=false. Every other token stays ASCII (always one cell):
 //
-//	^N ahead (push pending) · vN behind (pull available) · ^N vM diverged ·
 //	ok in sync · *N dirty (dirtyBadge) · ~ fetching · . loading · ! no upstream/err
-func syncGlyph(r *repoVM) string {
+func syncGlyph(r *repoVM, unicode bool) string {
 	if !r.loaded {
 		return styleDim.Render(".")
 	}
 	if r.fetching {
 		return styleDim.Render("~")
 	}
+	up, down := "+", "-"
+	if unicode {
+		up, down = "↑", "↓"
+	}
 	st := r.status
 	switch {
 	case st.Err != nil, !st.HasUpstream:
 		return styleRed.Render("!")
 	case st.Ahead > 0 && st.Behind > 0:
-		return styleMagenta.Render(fmt.Sprintf("^%d v%d", st.Ahead, st.Behind))
+		return styleMagenta.Render(fmt.Sprintf("%s%d %s%d", up, st.Ahead, down, st.Behind))
 	case st.Ahead > 0:
-		return styleYellow.Render(fmt.Sprintf("^%d", st.Ahead))
+		return styleYellow.Render(fmt.Sprintf("%s%d", up, st.Ahead))
 	case st.Behind > 0:
-		return styleCyan.Render(fmt.Sprintf("v%d", st.Behind))
+		return styleCyan.Render(fmt.Sprintf("%s%d", down, st.Behind))
 	default:
 		return styleGreen.Render("ok")
 	}
@@ -133,7 +137,7 @@ func (m Model) renderRow(idx int, r *repoVM, nameW int) string {
 	}
 	nameCell := nameStyle.Render(truncate(r.repo.Name, nameW))
 	dirtyCell := lipgloss.NewStyle().Width(wDirty).Render(dirtyBadge(r.status))
-	statusCell := lipgloss.NewStyle().Width(wStatus).Render(syncGlyph(r))
+	statusCell := lipgloss.NewStyle().Width(wStatus).Render(syncGlyph(r, m.cfg.UnicodeGlyphs()))
 	// Two spaces after the cursor keep the column budget (computeDims) unchanged
 	// now that the selection marker is gone.
 	return cursor + "  " + nameCell + " " + dirtyCell + " " + statusCell
@@ -203,6 +207,10 @@ func (m Model) helpView() string {
 	row := func(left, desc string) string {
 		return "  " + lipgloss.NewStyle().Width(14).Render(left) + styleDim.Render(desc)
 	}
+	up, down := "+", "-"
+	if m.cfg.UnicodeGlyphs() {
+		up, down = "↑", "↓"
+	}
 	lines := []string{
 		styleTitle.Render("manygit — help"),
 		"",
@@ -222,9 +230,9 @@ func (m Model) helpView() string {
 		"",
 		styleGroup.Render("Status column"),
 		row(styleGreen.Render("ok"), "up to date with its upstream"),
-		row(styleYellow.Render("^N"), "ahead N — you have commits to PUSH"),
-		row(styleCyan.Render("vN"), "behind N — commits available to PULL"),
-		row(styleMagenta.Render("^N vM"), "diverged (N ahead, M behind)"),
+		row(styleYellow.Render(up+"N"), "ahead N — you have commits to PUSH"),
+		row(styleCyan.Render(down+"N"), "behind N — commits available to PULL"),
+		row(styleMagenta.Render(up+"N "+down+"M"), "diverged (N ahead, M behind)"),
 		row(styleOrange.Render("*N"), "N files changed (dirty working tree)"),
 		row(styleDim.Render("~ / ."), "fetching / loading"),
 		row(styleRed.Render("!"), "no upstream, or error"),

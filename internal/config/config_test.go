@@ -50,3 +50,20 @@ func TestLoad_OverridesFromFile(t *testing.T) {
 		t.Errorf("prune should include both foo and node_modules: %v", set)
 	}
 }
+
+func TestStatusGlyphs(t *testing.T) {
+	if !Default().UnicodeGlyphs() {
+		t.Errorf("default should use unicode glyphs")
+	}
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte("status_glyphs: ascii\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.UnicodeGlyphs() {
+		t.Errorf("status_glyphs: ascii should disable unicode glyphs")
+	}
+}

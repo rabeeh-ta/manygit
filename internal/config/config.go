@@ -13,16 +13,23 @@ import (
 
 // Config is the effective configuration.
 type Config struct {
-	Root        string   `yaml:"root"`
-	MaxDepth    int      `yaml:"max_depth"`
-	Concurrency int      `yaml:"concurrency"`
-	OpenCmd     string   `yaml:"open_cmd"`
-	Prune       []string `yaml:"prune"` // merged with defaults
+	Root         string   `yaml:"root"`
+	MaxDepth     int      `yaml:"max_depth"`
+	Concurrency  int      `yaml:"concurrency"`
+	OpenCmd      string   `yaml:"open_cmd"`
+	Prune        []string `yaml:"prune"`         // merged with defaults
+	StatusGlyphs string   `yaml:"status_glyphs"` // "unicode" (↑↓) or "ascii" (+-)
 }
 
 // Default returns the built-in configuration.
 func Default() Config {
-	return Config{MaxDepth: 3, Concurrency: 8, OpenCmd: "code"}
+	return Config{MaxDepth: 3, Concurrency: 8, OpenCmd: "code", StatusGlyphs: "unicode"}
+}
+
+// UnicodeGlyphs reports whether ahead/behind should use ↑/↓ (true) or the
+// alignment-safe ASCII +/- (set status_glyphs: ascii to force ASCII).
+func (c Config) UnicodeGlyphs() bool {
+	return c.StatusGlyphs != "ascii"
 }
 
 // ConfigPath returns the XDG config file path.
@@ -67,6 +74,9 @@ func Load(path string) (Config, error) {
 	}
 	if file.OpenCmd != "" {
 		cfg.OpenCmd = file.OpenCmd
+	}
+	if file.StatusGlyphs != "" {
+		cfg.StatusGlyphs = file.StatusGlyphs
 	}
 	cfg.Prune = append(cfg.Prune, file.Prune...)
 	return cfg, nil

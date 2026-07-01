@@ -54,12 +54,16 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 | Glyph | Meaning |
 |---|---|
 | `ok` | up to date with its upstream |
-| `^N` | ahead N — commits to **push** |
-| `vN` | behind N — commits to **pull** |
-| `^N vM` | diverged (N ahead, M behind) |
+| `↑N` | ahead N — commits to **push** |
+| `↓N` | behind N — commits to **pull** |
+| `↑N ↓M` | diverged (N ahead, M behind) |
 | `*N` | N files changed (dirty working tree) |
 | `~` / `.` | fetching / loading |
 | `!` | no upstream, or error |
+
+Ahead/behind use `↑`/`↓` by default. Those are East-Asian *ambiguous* width —
+if your terminal renders them two cells wide, the column drifts; set
+`status_glyphs: ascii` (below) to use the always-aligned `+N` / `-N` instead.
 
 ## Config (optional)
 
@@ -69,6 +73,7 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 max_depth: 3
 concurrency: 8
 open_cmd: code
+status_glyphs: unicode   # ahead/behind arrows; use "ascii" for +N / -N if they misalign
 prune:
   - node_modules
   - vendor

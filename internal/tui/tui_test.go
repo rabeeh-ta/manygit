@@ -247,7 +247,8 @@ func TestTUI_DecorativeGlyphsAreASCII(t *testing.T) {
 		{loaded: true, status: git.RepoStatus{HasUpstream: true}},
 	}
 	for i, r := range states {
-		if g := stripANSI(syncGlyph(r)); !isASCII(g) {
+		// ascii mode (unicode=false) must be ASCII-safe.
+		if g := stripANSI(syncGlyph(r, false)); !isASCII(g) {
 			t.Errorf("syncGlyph[%d] = %q is not ASCII", i, g)
 		}
 	}
@@ -307,6 +308,25 @@ func TestTUI_BranchNavIsPanelScoped(t *testing.T) {
 	}
 	if m.cursor != startRepo {
 		t.Errorf("repo cursor moved (%d→%d) while browsing branches", startRepo, m.cursor)
+	}
+}
+
+// syncGlyph renders ↑/↓ in unicode mode and alignment-safe +/- in ascii mode.
+func TestTUI_SyncGlyphModes(t *testing.T) {
+	ahead := &repoVM{loaded: true, status: git.RepoStatus{HasUpstream: true, Ahead: 2}}
+	behind := &repoVM{loaded: true, status: git.RepoStatus{HasUpstream: true, Behind: 8}}
+	cases := []struct {
+		vm      *repoVM
+		unicode bool
+		want    string
+	}{
+		{ahead, false, "+2"}, {behind, false, "-8"},
+		{ahead, true, "↑2"}, {behind, true, "↓8"},
+	}
+	for _, c := range cases {
+		if g := stripANSI(syncGlyph(c.vm, c.unicode)); g != c.want {
+			t.Errorf("syncGlyph(unicode=%v) = %q, want %q", c.unicode, g, c.want)
+		}
 	}
 }
 
