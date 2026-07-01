@@ -33,3 +33,26 @@ func syncCmd(sem chan struct{}, path string) tea.Cmd {
 func pushCmd(sem chan struct{}, path string) tea.Cmd {
 	return gated(sem, func() tea.Msg { return pushDoneMsg{path: path, err: git.Push(path)} })
 }
+
+func branchesCmd(path string) tea.Cmd {
+	return func() tea.Msg {
+		b, err := git.Branches(path)
+		return branchesMsg{path: path, branches: b, err: err}
+	}
+}
+
+func logCmd(path string, limit int) tea.Cmd {
+	return func() tea.Msg {
+		lines, err := git.GraphLog(path, limit)
+		return logMsg{path: path, lines: lines, err: err}
+	}
+}
+
+func checkoutCmd(sem chan struct{}, path, branch string) tea.Cmd {
+	return gated(sem, func() tea.Msg {
+		if err := git.Checkout(path, branch); err != nil {
+			return syncDoneMsg{path: path, err: err}
+		}
+		return statusMsg{path: path, st: git.Status(path)}
+	})
+}

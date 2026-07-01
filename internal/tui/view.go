@@ -115,6 +115,35 @@ func (m Model) renderRepoBody(d dims) string {
 	return b.String()
 }
 
+func (m Model) renderBranches() string {
+	var b strings.Builder
+	b.WriteString(styleGroup.Render("Branches") + "\n")
+	for i, br := range m.branches {
+		cursor := "  "
+		if m.focus == panelBranches && i == m.branchCursor {
+			cursor = styleCursor.Render("▸ ")
+		}
+		name := br.Name
+		if br.IsRemote {
+			name = styleDim.Render(name)
+		}
+		if br.IsCurrent {
+			name += styleGreen.Render(" ← current")
+		}
+		b.WriteString(cursor + name + "\n")
+	}
+	return b.String()
+}
+
+func (m Model) renderLog() string {
+	var b strings.Builder
+	b.WriteString(styleGroup.Render("Log") + "\n")
+	for _, line := range m.log {
+		b.WriteString(line + "\n")
+	}
+	return b.String()
+}
+
 func (m Model) footer() string {
 	return styleDim.Render(
 		"space select · s sync · p push · b checkout · o open · r refetch · ? help · q quit")
@@ -134,7 +163,25 @@ func (m Model) View() string {
 	d := computeDims(m.width, m.height)
 	title := styleTitle.Render("manygit") + "  " +
 		styleDim.Render(fmt.Sprintf("%d repos · %d selected", len(m.repos), len(m.selected)))
+
 	left := panelStyle(d.leftW, d.bodyH, m.focus == panelRepos).
 		Render(clampLines(m.renderRepoBody(d), d.bodyH))
-	return lipgloss.JoinVertical(lipgloss.Left, title, "", left, m.statusOrFilterLine())
+
+	// right column: two stacked panels sharing the left panel's total height.
+	topInner := max((d.bodyH-2)*40/100, 3)
+	botInner := max((d.bodyH-2)-topInner, 3)
+	branches := panelStyle(d.rightW, topInner, m.focus == panelBranches).
+		Render(clampLines(m.renderBranches(), topInner))
+	logp := panelStyle(d.rightW, botInner, m.focus == panelLog).
+		Render(clampLines(m.renderLog(), botInner))
+	right := lipgloss.JoinVertical(lipgloss.Left, branches, logp)
+
+	cols := lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gutter), right)
+	view := lipgloss.JoinVertical(lipgloss.Left, title, "", cols, m.statusOrFilterLine())
+
+	tw := m.width
+	if tw <= 0 {
+		tw = minTermW
+	}
+	return lipgloss.NewStyle().MaxWidth(tw).Render(view)
 }

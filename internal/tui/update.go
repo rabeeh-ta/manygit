@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -46,10 +48,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusLine = styleGreen.Render("pushed " + name)
 		}
 		return m, statusCmd(msg.path)
+	case branchesMsg:
+		if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == msg.path {
+			m.branches = msg.branches
+			if m.branchCursor >= len(m.branches) {
+				m.branchCursor = 0
+			}
+		}
+		return m, nil
+	case logMsg:
+		if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == msg.path {
+			m.log = msg.lines
+		}
+		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
 	return m, nil
+}
+
+// loadContextCmd loads branches + log for the highlighted repo.
+func (m Model) loadContextCmd() tea.Cmd {
+	r := m.currentVisible(m.visibleRepos())
+	if r == nil {
+		return nil
+	}
+	return tea.Batch(branchesCmd(r.repo.Path), logCmd(r.repo.Path, 50))
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -71,10 +95,43 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		if m.cursor < len(vis)-1 {
 			m.cursor++
+			return m, m.loadContextCmd()
 		}
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
+			return m, m.loadContextCmd()
+		}
+	case "J":
+		if m.focus == panelBranches && m.branchCursor < len(m.branches)-1 {
+			m.branchCursor++
+		}
+	case "K":
+		if m.focus == panelBranches && m.branchCursor > 0 {
+			m.branchCursor--
+		}
+	case "b", "enter":
+		if r := m.currentVisible(vis); r != nil && m.branchCursor < len(m.branches) {
+			if r.status.DirtyCount > 0 {
+				m.statusLine = styleOrange.Render("checkout skipped: dirty working tree")
+				return m, nil
+			}
+			target := m.branches[m.branchCursor]
+			name := target.Name
+			if target.IsRemote {
+				if idx := strings.LastIndex(name, "/"); idx >= 0 {
+					name = name[idx+1:]
+				}
+			}
+			return m, checkoutCmd(m.sem, r.repo.Path, name)
+		}
+	case "o":
+		if r := m.currentVisible(vis); r != nil {
+			path, openCmd := r.repo.Path, m.cfg.OpenCmd
+			return m, func() tea.Msg {
+				_ = exec.Command(openCmd, path).Start() // detached; ignore result
+				return nil
+			}
 		}
 	case " ":
 		if r := m.currentVisible(vis); r != nil {

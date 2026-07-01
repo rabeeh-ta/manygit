@@ -74,5 +74,8 @@ func (m Model) Init() tea.Cmd {
 		r.fetching = true
 		cmds = append(cmds, fetchCmd(m.sem, r.repo.Path))
 	}
+	if c := m.loadContextCmd(); c != nil {
+		cmds = append(cmds, c)
+	}
 	return tea.Batch(cmds...)
 }

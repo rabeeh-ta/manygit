@@ -143,3 +143,37 @@ func TestTUI_SyncSkipsDirtyRepo(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
 }
+
+func TestTUI_ShowsBranchesForHighlighted(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	gitCmd(t, repos[0].Path, "branch", "feature")
+	tm := teatest.NewTestModel(t, New(cfg, repos), teatest.WithInitialTermSize(120, 40))
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("feature")) && bytes.Contains(b, []byte("master"))
+	}, teatest.WithDuration(3*time.Second))
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+}
+
+func TestTUI_ShowsLogForHighlighted(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	tm := teatest.NewTestModel(t, New(cfg, repos), teatest.WithInitialTermSize(120, 40))
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("init"))
+	}, teatest.WithDuration(3*time.Second))
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+}
+
+// Regression guard for the Layout & Spacing Discipline: no rendered line may
+// exceed the terminal width.
+func TestTUI_LinesFitWidth(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	const w = 100
+	m := loadAll(t, New(cfg, repos), w, 30)
+	for _, line := range strings.Split(m.View(), "\n") {
+		if lipgloss.Width(line) > w {
+			t.Errorf("line width %d > %d: %q", lipgloss.Width(line), w, line)
+		}
+	}
+}
