@@ -190,6 +190,34 @@ func TestTUI_ScriptsPanel(t *testing.T) {
 	}
 }
 
+// Action status messages set the status line and schedule an expiry; a matching
+// expiry clears it, but a stale one (older generation) must not.
+func TestTUI_StatusLineExpires(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+
+	mm, cmd := m.Update(pushDoneMsg{path: m.repos[0].repo.Path})
+	m = mm.(Model)
+	if m.statusLine == "" {
+		t.Fatal("expected a status line after push")
+	}
+	if cmd == nil {
+		t.Fatal("expected an expiry command after push")
+	}
+	// matching expiry clears it
+	mm, _ = m.Update(statusExpireMsg{gen: m.statusGen})
+	if got := mm.(Model).statusLine; got != "" {
+		t.Errorf("matching expire should clear the status, got %q", got)
+	}
+	// a stale expiry must not clear a newer message
+	m.statusLine = "newer"
+	m.statusGen = 5
+	mm, _ = m.Update(statusExpireMsg{gen: 4})
+	if mm.(Model).statusLine != "newer" {
+		t.Error("stale expire should not clear a newer status")
+	}
+}
+
 // F toggles a filter that shows only repos with changes / ahead / behind.
 func TestTUI_AttentionFilter(t *testing.T) {
 	cfg, repos := twoRepos(t)

@@ -44,6 +44,7 @@ type Model struct {
 	scripts         []discover.Script
 	scriptCursor    int
 	statusLine      string
+	statusGen       int // bumped on each status set; guards the expiry timer
 
 	sem           chan struct{}
 	width, height int

@@ -4,6 +4,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -35,27 +36,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	case syncDoneMsg:
-		m = m.applySyncResult(msg)
+		exp := m.setStatus(m.syncResultText(msg))
+		cmds := []tea.Cmd{exp}
 		if !msg.skipped && msg.err == nil {
-			return m, statusCmd(msg.path) // refresh status asynchronously after a successful sync
+			cmds = append(cmds, statusCmd(msg.path)) // refresh status after a successful sync
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 	case pushDoneMsg:
 		name := baseName(msg.path)
+		var s string
 		if msg.err != nil {
-			m.statusLine = styleRed.Render("push " + name + " failed: " + msg.err.Error())
+			s = styleRed.Render("push " + name + " failed: " + msg.err.Error())
 		} else {
-			m.statusLine = styleGreen.Render("pushed " + name)
+			s = styleGreen.Render("pushed " + name)
 		}
-		return m, statusCmd(msg.path)
+		exp := m.setStatus(s)
+		return m, tea.Batch(exp, statusCmd(msg.path))
 	case checkoutDoneMsg:
 		name := baseName(msg.path)
 		if msg.err != nil {
-			m.statusLine = styleRed.Render("checkout " + name + " failed: " + msg.err.Error())
-			return m, nil
+			exp := m.setStatus(styleRed.Render("checkout " + name + " failed: " + msg.err.Error()))
+			return m, exp
 		}
-		m.statusLine = styleGreen.Render("checked out " + msg.branch + " in " + name)
-		return m, tea.Batch(statusCmd(msg.path), m.loadContextCmd())
+		exp := m.setStatus(styleGreen.Render("checked out " + msg.branch + " in " + name))
+		return m, tea.Batch(exp, statusCmd(msg.path), m.loadContextCmd())
 	case branchesMsg:
 		if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == msg.path {
 			m.branches = msg.branches
@@ -70,10 +74,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case scriptDoneMsg:
+		var s string
 		if msg.err != nil {
-			m.statusLine = styleRed.Render("script " + msg.name + " failed: " + msg.err.Error())
+			s = styleRed.Render("script " + msg.name + " failed: " + msg.err.Error())
 		} else {
-			m.statusLine = styleGreen.Render("ran " + msg.name)
+			s = styleGreen.Render("ran " + msg.name)
+		}
+		exp := m.setStatus(s)
+		return m, exp
+	case statusExpireMsg:
+		if msg.gen == m.statusGen {
+			m.statusLine = ""
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -178,8 +189,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "b", "enter":
 		if r := m.currentVisible(vis); r != nil && m.focus == panelBranches && m.branchCursor < len(m.branches) {
 			if r.status.DirtyCount > 0 {
-				m.statusLine = styleOrange.Render("checkout skipped: dirty working tree")
-				return m, nil
+				exp := m.setStatus(styleOrange.Render("checkout skipped: dirty working tree"))
+				return m, exp
 			}
 			target := m.branches[m.branchCursor]
 			name := target.Name
@@ -291,15 +302,25 @@ func (m Model) targets() []*repoVM {
 	return nil
 }
 
-func (m Model) applySyncResult(msg syncDoneMsg) Model {
+const statusTTL = 4 * time.Second
+
+// setStatus sets the status line and returns a command that clears it after
+// statusTTL — unless a newer status replaces it first (guarded by statusGen).
+func (m *Model) setStatus(s string) tea.Cmd {
+	m.statusLine = s
+	m.statusGen++
+	gen := m.statusGen
+	return tea.Tick(statusTTL, func(time.Time) tea.Msg { return statusExpireMsg{gen: gen} })
+}
+
+func (m Model) syncResultText(msg syncDoneMsg) string {
 	name := baseName(msg.path)
 	switch {
 	case msg.skipped:
-		m.statusLine = styleOrange.Render("sync " + name + " skipped: " + msg.reason)
+		return styleOrange.Render("sync " + name + " skipped: " + msg.reason)
 	case msg.err != nil:
-		m.statusLine = styleRed.Render("sync " + name + " failed: " + msg.err.Error())
+		return styleRed.Render("sync " + name + " failed: " + msg.err.Error())
 	default:
-		m.statusLine = styleGreen.Render("synced " + name)
+		return styleGreen.Render("synced " + name)
 	}
-	return m
 }

@@ -46,3 +46,8 @@ type scriptDoneMsg struct {
 	name string
 	err  error
 }
+
+// statusExpireMsg clears the status line if gen still matches the latest set.
+type statusExpireMsg struct {
+	gen int
+}
