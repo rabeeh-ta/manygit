@@ -63,12 +63,16 @@ func New(cfg config.Config, repos []discover.Repo) Model {
 	}
 }
 
-// Init loads local status for every repo (fast, ungated). Background fetch is
-// added in Task 9; context load in Task 10.
+// Init loads local status for every repo (fast, ungated), then fires a
+// background fetch (gated by m.sem) for each repo so rows update live.
 func (m Model) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	for _, r := range m.repos {
 		cmds = append(cmds, statusCmd(r.repo.Path))
+	}
+	for _, r := range m.repos {
+		r.fetching = true
+		cmds = append(cmds, fetchCmd(m.sem, r.repo.Path))
 	}
 	return tea.Batch(cmds...)
 }

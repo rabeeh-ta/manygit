@@ -1,7 +1,11 @@
 package tui
 
 import (
+	"path/filepath"
+
 	tea "github.com/charmbracelet/bubbletea"
+
+	"manygit/internal/git"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -18,6 +22,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case fetchDoneMsg:
+		for _, r := range m.repos {
+			if r.repo.Path == msg.path {
+				r.fetching = false
+				r.status = git.Status(msg.path)
+				r.loaded = true
+				break
+			}
+		}
+		return m, nil
+	case syncDoneMsg:
+		return m.applySyncResult(msg), nil
+	case pushDoneMsg:
+		name := baseName(msg.path)
+		if msg.err != nil {
+			m.statusLine = styleRed.Render("push " + name + " failed: " + msg.err.Error())
+		} else {
+			m.statusLine = styleGreen.Render("pushed " + name)
+		}
+		return m, statusCmd(msg.path)
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -65,6 +89,37 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "/":
 		m.filtering = true
+	case "f":
+		if r := m.currentVisible(vis); r != nil {
+			r.fetching = true
+			return m, fetchCmd(m.sem, r.repo.Path)
+		}
+	case "r":
+		var cmds []tea.Cmd
+		for _, r := range m.repos {
+			r.fetching = true
+			cmds = append(cmds, fetchCmd(m.sem, r.repo.Path))
+		}
+		return m, tea.Batch(cmds...)
+	case "s":
+		var cmds []tea.Cmd
+		for _, r := range m.targets() {
+			if r.status.DirtyCount > 0 {
+				path := r.repo.Path
+				cmds = append(cmds, func() tea.Msg {
+					return syncDoneMsg{path: path, skipped: true, reason: "dirty working tree"}
+				})
+				continue
+			}
+			cmds = append(cmds, syncCmd(m.sem, r.repo.Path))
+		}
+		return m, tea.Batch(cmds...)
+	case "p":
+		var cmds []tea.Cmd
+		for _, r := range m.targets() {
+			cmds = append(cmds, pushCmd(m.sem, r.repo.Path))
+		}
+		return m, tea.Batch(cmds...)
 	}
 	return m, nil
 }
@@ -87,4 +142,42 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 	}
 	return m, nil
+}
+
+func baseName(p string) string { return filepath.Base(p) }
+
+// targets returns the action targets: the selection if any, else the highlighted repo.
+func (m Model) targets() []*repoVM {
+	var sel []*repoVM
+	for _, r := range m.repos {
+		if m.selected[r.repo.Path] {
+			sel = append(sel, r)
+		}
+	}
+	if len(sel) > 0 {
+		return sel
+	}
+	if r := m.currentVisible(m.visibleRepos()); r != nil {
+		return []*repoVM{r}
+	}
+	return nil
+}
+
+func (m Model) applySyncResult(msg syncDoneMsg) Model {
+	name := baseName(msg.path)
+	switch {
+	case msg.skipped:
+		m.statusLine = styleOrange.Render("sync " + name + " skipped: " + msg.reason)
+	case msg.err != nil:
+		m.statusLine = styleRed.Render("sync " + name + " failed: " + msg.err.Error())
+	default:
+		m.statusLine = styleGreen.Render("synced " + name)
+	}
+	for _, r := range m.repos {
+		if r.repo.Path == msg.path {
+			r.status = git.Status(msg.path)
+			break
+		}
+	}
+	return m
 }

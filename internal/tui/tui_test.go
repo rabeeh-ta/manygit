@@ -125,3 +125,21 @@ func TestTUI_FilterNarrowsList(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
 }
+
+func TestTUI_SyncSkipsDirtyRepo(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	// make the first repo dirty
+	if err := os.WriteFile(filepath.Join(repos[0].Path, "dirty.txt"), []byte("z\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tm := teatest.NewTestModel(t, New(cfg, repos), teatest.WithInitialTermSize(120, 40))
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("●1"))
+	}, teatest.WithDuration(3*time.Second))
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("skipped"))
+	}, teatest.WithDuration(3*time.Second))
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+}
