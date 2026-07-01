@@ -37,7 +37,7 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 
 | Key | Action |
 |---|---|
-| `1` `2` `3` `4`, `tab` | focus the Repos / Branches / Log / Scripts panel |
+| `1` `2` `3` `4`, `tab` | focus the Repos / Scripts / Branches / Log panel |
 | `j`/`k`, `↑`/`↓` | move within the focused panel |
 | `space` | Repos panel → view branches · Scripts panel → run the script · else → back to Repos |
 | `F` | toggle: show only repos with changes / ahead / behind |

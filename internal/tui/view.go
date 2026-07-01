@@ -246,7 +246,7 @@ func (m Model) helpView() string {
 		styleTitle.Render("manygit — help"),
 		"",
 		styleGroup.Render("Panels & navigation"),
-		row("1 / 2 / 3 / 4", "focus the Repos / Branches / Log / Scripts panel"),
+		row("1 / 2 / 3 / 4", "focus the Repos / Scripts / Branches / Log panel"),
 		row("tab", "cycle panels"),
 		row("j / k", "move within the FOCUSED panel"),
 		row("space", "Repos → branches · Scripts → run it · else back to Repos"),
@@ -308,16 +308,16 @@ func (m Model) View() string {
 	reposInner := max((d.bodyH-2)-scriptsInner, 3)
 	reposPanel := titledPanel(1, "Repos", d.leftW, reposInner, m.focus == panelRepos,
 		lipgloss.NewStyle().MaxWidth(d.leftW-2).Render(clampLines(m.renderRepoBody(d), reposInner)))
-	scriptsPanel := titledPanel(4, "Scripts", d.leftW, scriptsInner, m.focus == panelScripts,
+	scriptsPanel := titledPanel(2, "Scripts", d.leftW, scriptsInner, m.focus == panelScripts,
 		clampLines(m.renderScripts(d.leftW-2), scriptsInner))
 	left := lipgloss.JoinVertical(lipgloss.Left, reposPanel, scriptsPanel)
 
 	// right column: two stacked panels sharing the left panel's total height.
 	topInner := max((d.bodyH-2)*40/100, 3)
 	botInner := max((d.bodyH-2)-topInner, 3)
-	branches := titledPanel(2, "Branches", d.rightW, topInner, m.focus == panelBranches,
+	branches := titledPanel(3, "Branches", d.rightW, topInner, m.focus == panelBranches,
 		clampLines(m.renderBranches(d.rightW-2), topInner))
-	logp := titledPanel(3, "Log", d.rightW, botInner, m.focus == panelLog,
+	logp := titledPanel(4, "Log", d.rightW, botInner, m.focus == panelLog,
 		clampLines(m.renderLog(d.rightW-2), botInner))
 	right := lipgloss.JoinVertical(lipgloss.Left, branches, logp)
 

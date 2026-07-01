@@ -126,11 +126,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "1":
 		m.focus = panelRepos
 	case "2":
-		m.focus = panelBranches
-	case "3":
-		m.focus = panelLog
-	case "4":
 		m.focus = panelScripts
+	case "3":
+		m.focus = panelBranches
+	case "4":
+		m.focus = panelLog
 	case "tab":
 		m.focus = (m.focus + 1) % panelCount
 	case "down", "j":

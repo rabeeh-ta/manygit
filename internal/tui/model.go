@@ -11,11 +11,11 @@ import (
 type panel int
 
 const (
-	panelRepos panel = iota
-	panelBranches
-	panelLog
-	panelScripts
-	panelCount // number of focusable panels
+	panelRepos panel = iota // key 1
+	panelScripts            // key 2
+	panelBranches           // key 3
+	panelLog                // key 4
+	panelCount              // number of focusable panels
 )
 
 // repoVM is the per-repo view model.
