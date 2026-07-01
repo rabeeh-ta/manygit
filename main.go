@@ -4,6 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"manygit/internal/config"
+	"manygit/internal/discover"
+	"manygit/internal/tui"
 )
 
 var version = "0.1.0-dev"
@@ -18,7 +24,28 @@ func main() {
 		return
 	}
 
-	fmt.Println("manygit will scan:", resolveRoot(*root, "")) // replaced by TUI in Task 11
+	cfg, err := config.Load("")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "config:", err)
+		os.Exit(1)
+	}
+
+	scanRoot := resolveRoot(*root, cfg.Root)
+	repos, err := discover.Discover(scanRoot, discover.Options{MaxDepth: cfg.MaxDepth, Prune: cfg.PruneSet()})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "discover:", err)
+		os.Exit(1)
+	}
+	if len(repos) == 0 {
+		fmt.Fprintf(os.Stderr, "no git repositories found under %s (max depth %d)\n", scanRoot, cfg.MaxDepth)
+		os.Exit(1)
+	}
+
+	p := tea.NewProgram(tui.New(cfg, repos), tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 func resolveRoot(flagRoot, cfgRoot string) string {
