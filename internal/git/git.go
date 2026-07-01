@@ -33,7 +33,7 @@ func run(dir string, args ...string) (string, error) {
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
 	}
-	return strings.TrimSpace(out.String()), nil
+	return strings.TrimRight(out.String(), "\n"), nil
 }
 
 func branchExists(dir, branch string) bool {
@@ -108,4 +108,60 @@ func PullFFOnly(dir string) error {
 func Push(dir string) error {
 	_, err := run(dir, "push", "--quiet")
 	return err
+}
+
+// Branch is a local or remote branch of a repo.
+type Branch struct {
+	Name      string
+	IsRemote  bool
+	IsCurrent bool
+}
+
+// Branches lists local and remote branches (origin/HEAD is skipped).
+func Branches(dir string) ([]Branch, error) {
+	out, err := run(dir, "branch", "--all", "--format=%(HEAD)\t%(refname)")
+	if err != nil {
+		return nil, err
+	}
+	var branches []Branch
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		current := strings.TrimSpace(parts[0]) == "*"
+		ref := parts[1]
+		switch {
+		case strings.HasPrefix(ref, "refs/heads/"):
+			branches = append(branches, Branch{Name: strings.TrimPrefix(ref, "refs/heads/"), IsCurrent: current})
+		case strings.HasPrefix(ref, "refs/remotes/"):
+			name := strings.TrimPrefix(ref, "refs/remotes/")
+			if strings.HasSuffix(name, "/HEAD") {
+				continue
+			}
+			branches = append(branches, Branch{Name: name, IsRemote: true})
+		}
+	}
+	return branches, nil
+}
+
+// Checkout switches to branch. For a remote ref "origin/foo", pass "foo" and
+// git's DWIM creates a tracking branch. The caller must ensure a clean tree; a
+// dirty checkout returns an error and changes nothing.
+func Checkout(dir, branch string) error {
+	_, err := run(dir, "checkout", branch)
+	return err
+}
+
+// GraphLog returns up to limit lines of `git log --graph --oneline` across all
+// refs, decorated. Lines are plain (no ANSI); the TUI applies styling.
+func GraphLog(dir string, limit int) ([]string, error) {
+	out, err := run(dir, "log", "--graph", "--oneline", "--decorate", "--all", fmt.Sprintf("-n%d", limit))
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(out, "\n"), nil
 }

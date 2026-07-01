@@ -63,8 +63,6 @@ func TestStatus_Dirty(t *testing.T) {
 	}
 }
 
-var _ = strings.TrimSpace // strings used by later tests in this file
-
 // initRepoWithRemote creates a bare "origin", a clone with one pushed commit,
 // and returns (clone, bare).
 func initRepoWithRemote(t *testing.T) (clone, bare string) {
@@ -138,5 +136,55 @@ func TestPush_ClearsAhead(t *testing.T) {
 	}
 	if after := Status(clone); after.Ahead != 0 {
 		t.Errorf("Ahead after push = %d, want 0", after.Ahead)
+	}
+}
+
+func TestBranches_ListsLocalAndCurrent(t *testing.T) {
+	dir := initRepo(t)
+	gitCmd(t, dir, "branch", "feature")
+
+	branches, err := Branches(dir)
+	if err != nil {
+		t.Fatalf("Branches: %v", err)
+	}
+	var sawMaster, sawFeature, masterCurrent bool
+	for _, b := range branches {
+		switch b.Name {
+		case "master":
+			sawMaster, masterCurrent = true, b.IsCurrent
+		case "feature":
+			sawFeature = true
+		}
+	}
+	if !sawMaster || !sawFeature {
+		t.Errorf("expected master and feature, got %+v", branches)
+	}
+	if !masterCurrent {
+		t.Errorf("master should be current")
+	}
+}
+
+func TestCheckout_SwitchesBranch(t *testing.T) {
+	dir := initRepo(t)
+	gitCmd(t, dir, "branch", "feature")
+	if err := Checkout(dir, "feature"); err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+	if st := Status(dir); st.Branch != "feature" {
+		t.Errorf("branch = %q, want feature", st.Branch)
+	}
+}
+
+func TestGraphLog_ReturnsCommits(t *testing.T) {
+	dir := initRepo(t)
+	lines, err := GraphLog(dir, 10)
+	if err != nil {
+		t.Fatalf("GraphLog: %v", err)
+	}
+	if len(lines) == 0 {
+		t.Fatalf("expected at least one log line")
+	}
+	if !strings.Contains(strings.Join(lines, "\n"), "init") {
+		t.Errorf("log should mention the 'init' commit, got:\n%s", strings.Join(lines, "\n"))
 	}
 }
