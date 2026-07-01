@@ -4,8 +4,6 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
-
-	"manygit/internal/git"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -23,17 +21,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case fetchDoneMsg:
+		var cmd tea.Cmd
 		for _, r := range m.repos {
 			if r.repo.Path == msg.path {
 				r.fetching = false
-				r.status = git.Status(msg.path)
-				r.loaded = true
+				if msg.err == nil {
+					cmd = statusCmd(msg.path) // refresh ahead/behind asynchronously
+				}
 				break
 			}
 		}
-		return m, nil
+		return m, cmd
 	case syncDoneMsg:
-		return m.applySyncResult(msg), nil
+		m = m.applySyncResult(msg)
+		if !msg.skipped && msg.err == nil {
+			return m, statusCmd(msg.path) // refresh status asynchronously after a successful sync
+		}
+		return m, nil
 	case pushDoneMsg:
 		name := baseName(msg.path)
 		if msg.err != nil {
@@ -90,13 +94,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.filtering = true
 	case "f":
-		if r := m.currentVisible(vis); r != nil {
+		if r := m.currentVisible(vis); r != nil && !r.fetching {
 			r.fetching = true
 			return m, fetchCmd(m.sem, r.repo.Path)
 		}
 	case "r":
 		var cmds []tea.Cmd
 		for _, r := range m.repos {
+			if r.fetching {
+				continue
+			}
 			r.fetching = true
 			cmds = append(cmds, fetchCmd(m.sem, r.repo.Path))
 		}
@@ -104,6 +111,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		var cmds []tea.Cmd
 		for _, r := range m.targets() {
+			if !r.loaded {
+				path := r.repo.Path
+				cmds = append(cmds, func() tea.Msg {
+					return syncDoneMsg{path: path, skipped: true, reason: "status not loaded yet"}
+				})
+				continue
+			}
 			if r.status.DirtyCount > 0 {
 				path := r.repo.Path
 				cmds = append(cmds, func() tea.Msg {
@@ -172,12 +186,6 @@ func (m Model) applySyncResult(msg syncDoneMsg) Model {
 		m.statusLine = styleRed.Render("sync " + name + " failed: " + msg.err.Error())
 	default:
 		m.statusLine = styleGreen.Render("synced " + name)
-	}
-	for _, r := range m.repos {
-		if r.repo.Path == msg.path {
-			r.status = git.Status(msg.path)
-			break
-		}
 	}
 	return m
 }
