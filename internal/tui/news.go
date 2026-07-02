@@ -34,12 +34,16 @@ func (m Model) newsRepos() []newsRepo {
 // newsRefreshCmd gathers recent commits across the repos and asks the harness to
 // summarize them into short news-feed headlines. gen tags the result so a stale
 // refresh is dropped.
-func newsRefreshCmd(h harness.Harness, dir string, repos []newsRepo, gen int) tea.Cmd {
+func newsRefreshCmd(h harness.Harness, dir string, repos []newsRepo, days, gen int) tea.Cmd {
+	since := ""
+	if days > 0 {
+		since = fmt.Sprintf("%d days ago", days)
+	}
 	return func() tea.Msg {
 		var b strings.Builder
 		any := false
 		for _, r := range repos {
-			commits, _ := git.RecentCommits(r.path, newsCommitsPerRepo)
+			commits, _ := git.RecentCommits(r.path, newsCommitsPerRepo, since)
 			if len(commits) == 0 {
 				continue
 			}
@@ -106,5 +110,5 @@ func (m *Model) maybeRefreshNews() tea.Cmd {
 	}
 	m.newsGen++
 	m.newsLoading = true
-	return newsRefreshCmd(h, m.harnessDir(), m.newsRepos(), m.newsGen)
+	return newsRefreshCmd(h, m.harnessDir(), m.newsRepos(), m.cfg.NewsDays, m.newsGen)
 }

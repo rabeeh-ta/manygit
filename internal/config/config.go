@@ -21,11 +21,12 @@ type Config struct {
 	StatusGlyphs string   `yaml:"status_glyphs"` // "unicode" (↑↓) or "ascii" (+-)
 	Theme        string   `yaml:"theme"`         // color theme name (see the tui theme list)
 	Harness      string   `yaml:"harness"`       // AI harness: "claude" or "codex" (see internal/harness)
+	NewsDays     int      `yaml:"news_days"`     // top-bar news feed window in days (commits newer than this)
 }
 
 // Default returns the built-in configuration.
 func Default() Config {
-	return Config{MaxDepth: 3, Concurrency: 8, OpenCmd: "code", StatusGlyphs: "unicode", Theme: "default"}
+	return Config{MaxDepth: 3, Concurrency: 8, OpenCmd: "code", StatusGlyphs: "unicode", Theme: "default", NewsDays: 3}
 }
 
 // UnicodeGlyphs reports whether ahead/behind should use ↑/↓ (true) or the
@@ -85,6 +86,9 @@ func Load(path string) (Config, error) {
 	}
 	if file.Harness != "" {
 		cfg.Harness = file.Harness
+	}
+	if file.NewsDays != 0 {
+		cfg.NewsDays = file.NewsDays
 	}
 	cfg.Prune = append(cfg.Prune, file.Prune...)
 	return cfg, nil

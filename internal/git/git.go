@@ -57,9 +57,15 @@ func resolveDefault(dir string) string {
 
 // Status computes the RepoStatus for the repo at dir.
 // RecentCommits returns up to n of the most recent commit subjects across all
-// refs (branches + remote-tracking), newest first. Empty for a commitless repo.
-func RecentCommits(dir string, n int) ([]string, error) {
-	out, err := run(dir, "log", "-n", strconv.Itoa(n), "--all", "--pretty=format:%s")
+// refs (branches + remote-tracking), newest first. When since is non-empty (a
+// git approxidate like "3 days ago") only commits newer than it are returned, so
+// a quiet repo contributes nothing. Empty for a commitless repo.
+func RecentCommits(dir string, n int, since string) ([]string, error) {
+	args := []string{"log", "-n", strconv.Itoa(n), "--all", "--pretty=format:%s"}
+	if since != "" {
+		args = append(args, "--since="+since)
+	}
+	out, err := run(dir, args...)
 	if err != nil {
 		return nil, err
 	}

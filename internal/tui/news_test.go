@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestParseHeadlines(t *testing.T) {
@@ -54,6 +56,26 @@ func TestTUI_NewsFeed(t *testing.T) {
 	if m.newsIndex != 1 {
 		t.Error("a stale tick should not rotate")
 	}
+}
+
+// The news-window setting: selecting a day option updates the config (and would
+// refresh the feed — no real harness call here since none is installed).
+func TestTUI_NewsWindowSetting(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	cfg.Harness = "definitely-not-installed" // maybeRefreshNews returns nil (no CLI call)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m.showHelp = true
+	idx := settingRowIndex(skNewsDays, "7")
+	if idx < 0 {
+		t.Fatal("expected a 7-day news-window row")
+	}
+	m.settingsCursor = idx
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm.(Model)
+	if m.cfg.NewsDays != 7 {
+		t.Errorf("selecting 7 days should set NewsDays=7, got %d", m.cfg.NewsDays)
+	}
+	_ = cmd // no harness → nil; never executed regardless
 }
 
 func TestMaybeRefreshNews_NoHarness(t *testing.T) {

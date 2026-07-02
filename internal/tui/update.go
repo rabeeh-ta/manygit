@@ -3,6 +3,7 @@ package tui
 import (
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -520,7 +521,7 @@ func (m Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", " ":
 		if !m.showKeys {
-			m.settingsSelect()
+			return m, m.settingsSelect()
 		}
 	}
 	return m, nil
@@ -536,10 +537,11 @@ func (m *Model) previewSettings() {
 	}
 }
 
-// settingsSelect commits the highlighted radio row: a theme or glyph mode or
-// harness (persisted), or the editor row (opens the inline text edit). Selecting
-// a harness that isn't installed is a no-op.
-func (m *Model) settingsSelect() {
+// settingsSelect commits the highlighted radio row (theme / harness / news
+// window / glyph, persisted) or opens the editor edit. Returns a cmd to refresh
+// the news feed when the harness or news window changed. Selecting an
+// uninstalled harness is a no-op.
+func (m *Model) settingsSelect() tea.Cmd {
 	r := settingRows()[m.settingsCursor]
 	switch r.kind {
 	case skTheme:
@@ -550,6 +552,13 @@ func (m *Model) settingsSelect() {
 		if harness.Available(r.val) {
 			m.cfg.Harness = r.val
 			m.saveConfig()
+			return m.maybeRefreshNews() // a newly-picked harness can generate news
+		}
+	case skNewsDays:
+		if d, err := strconv.Atoi(r.val); err == nil {
+			m.cfg.NewsDays = d
+			m.saveConfig()
+			return m.maybeRefreshNews() // apply the new window immediately
 		}
 	case skGlyph:
 		m.cfg.StatusGlyphs = r.val
@@ -558,6 +567,7 @@ func (m *Model) settingsSelect() {
 		m.editingOpenCmd = true
 		m.openCmdBuf = m.cfg.OpenCmd
 	}
+	return nil
 }
 
 // saveConfig persists the current config (best-effort; a write failure leaves

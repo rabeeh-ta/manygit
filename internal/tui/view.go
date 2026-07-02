@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -544,6 +545,8 @@ func (m Model) settingsBody() string {
 			return styleGroup.Render("Theme") + styleDim.Render("   (previews live)")
 		case skHarness:
 			return styleGroup.Render("AI harness") + styleDim.Render("   (grayed = not installed)")
+		case skNewsDays:
+			return styleGroup.Render("News window") + styleDim.Render("   (top-bar feed lookback)")
 		case skGlyph:
 			return styleGroup.Render("Ahead / behind glyphs")
 		default:
@@ -551,17 +554,23 @@ func (m Model) settingsBody() string {
 		}
 	}
 
-	lines := []string{styleTitle.Render("manygit — settings"), ""}
+	// Build the scrollable middle (group headers + option rows) and track the
+	// line the cursor is on, so we can window it to keep the cursor visible.
+	var mid []string
+	cursorLine := 0
 	prev := settingKind(-1)
 	for i, r := range settingRows() {
 		if r.kind != prev {
-			lines = append(lines, hdr(r.kind))
+			mid = append(mid, hdr(r.kind))
 			prev = r.kind
 		}
 		cursor := m.settingsCursor == i
+		if cursor {
+			cursorLine = len(mid)
+		}
 		switch r.kind {
 		case skTheme:
-			lines = append(lines, line(cursor, radioMark(m.cfg.Theme == r.val), r.val))
+			mid = append(mid, line(cursor, radioMark(m.cfg.Theme == r.val), r.val))
 		case skHarness:
 			installed := harness.Available(r.val)
 			label := r.val
@@ -569,8 +578,7 @@ func (m Model) settingsBody() string {
 			if !installed {
 				label += "  (not installed)"
 			}
-			// grayed harnesses stay dim even under the cursor
-			cur := "  "
+			cur := "  " // grayed harnesses stay dim even under the cursor
 			if cursor {
 				cur = styleCursor.Render("> ")
 			}
@@ -578,14 +586,21 @@ func (m Model) settingsBody() string {
 			if cursor && installed {
 				lbl = styleCursor.Render(label)
 			}
-			lines = append(lines, "   "+cur+mark+lbl)
+			mid = append(mid, "   "+cur+mark+lbl)
+		case skNewsDays:
+			d, _ := strconv.Atoi(r.val)
+			label := r.val + " days"
+			if d == 1 {
+				label = "1 day"
+			}
+			mid = append(mid, line(cursor, radioMark(m.cfg.NewsDays == d), label))
 		case skGlyph:
 			label := "unicode  (arrows)"
 			if r.val == "ascii" {
 				label = "ascii    (+ / -)"
 			}
 			sel := (r.val == "unicode") == m.cfg.UnicodeGlyphs()
-			lines = append(lines, line(cursor, radioMark(sel), label))
+			mid = append(mid, line(cursor, radioMark(sel), label))
 		case skEditor:
 			val := m.cfg.OpenCmd
 			hint := ""
@@ -601,11 +616,22 @@ func (m Model) settingsBody() string {
 				ecur = styleCursor.Render("> ")
 				eval = styleCursor.Render(val)
 			}
-			lines = append(lines, "   "+ecur+eval+styleDim.Render(hint))
+			mid = append(mid, "   "+ecur+eval+styleDim.Render(hint))
 		}
 	}
-	lines = append(lines, styleDim.Render("   j/k move · enter select · tab keybindings · esc close"))
-	return strings.Join(lines, "\n")
+	// Window the middle to the space between the fixed title and footer.
+	th := m.height
+	if th <= 0 {
+		th = minTermH
+	}
+	avail := (th - 2) - 3 // box inner height minus title + blank + footer
+	if avail < 1 {
+		avail = 1
+	}
+	start, end := window(len(mid), cursorLine, avail)
+	body := append([]string{styleTitle.Render("manygit — settings"), ""}, mid[start:end]...)
+	body = append(body, styleDim.Render("   j/k move · enter select · tab keybindings · esc close"))
+	return strings.Join(body, "\n")
 }
 
 // keysBody is the two-column keybinding + status-legend reference (two columns so

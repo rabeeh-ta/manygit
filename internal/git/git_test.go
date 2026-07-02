@@ -285,6 +285,40 @@ func TestWorkingFileDiff_NoCommits(t *testing.T) {
 	}
 }
 
+func TestRecentCommits(t *testing.T) {
+	dir := initRepo(t) // one commit "init", just made
+	all, err := RecentCommits(dir, 5, "")
+	if err != nil || len(all) != 1 || all[0] != "init" {
+		t.Fatalf("RecentCommits(no window) = %v, %v", all, err)
+	}
+	recent, err := RecentCommits(dir, 5, "1 day ago") // window includes the fresh commit
+	if err != nil || len(recent) != 1 {
+		t.Errorf("RecentCommits(1 day) = %v, %v", recent, err)
+	}
+
+	// a commit dated long ago is excluded by a short window
+	old := t.TempDir()
+	gitCmd(t, old, "init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(old, "a.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, old, "add", ".")
+	c := exec.Command("git", "commit", "-q", "-m", "ancient")
+	c.Dir = old
+	c.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+		"GIT_AUTHOR_DATE=2020-01-01T00:00:00", "GIT_COMMITTER_DATE=2020-01-01T00:00:00")
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("commit: %v\n%s", err, out)
+	}
+	if got, _ := RecentCommits(old, 5, "3 days ago"); len(got) != 0 {
+		t.Errorf("a 3-day window should exclude a 2020 commit, got %v", got)
+	}
+	if got, _ := RecentCommits(old, 5, ""); len(got) != 1 {
+		t.Errorf("no window should include the old commit, got %v", got)
+	}
+}
+
 func TestGraphLog_ReturnsCommits(t *testing.T) {
 	dir := initRepo(t)
 	lines, err := GraphLog(dir, 10)
