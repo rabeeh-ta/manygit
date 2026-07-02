@@ -20,8 +20,8 @@ func TestTUI_AgentThinkingEscDropsStaleReply(t *testing.T) {
 	// esc leaves and cancels the wait
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = mm.(Model)
-	if m.bottomView != bvGraph || m.agentPhase != agentPhaseInput {
-		t.Fatalf("thinking+esc should leave (bvGraph) and reset phase to input, got view=%d phase=%d", m.bottomView, m.agentPhase)
+	if m.showAgent || m.agentPhase != agentPhaseInput {
+		t.Fatalf("thinking+esc should close the agent and reset phase to input, got showAgent=%v phase=%d", m.showAgent, m.agentPhase)
 	}
 	// re-enter the agent; the late reply from the abandoned request must be dropped
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("7")})
@@ -70,8 +70,8 @@ func TestTUI_AgentFlow(t *testing.T) {
 
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("7")})
 	m = mm.(Model)
-	if m.focus != panelBottom || m.bottomView != bvAgent || m.agentPhase != agentPhaseInput {
-		t.Fatal("7 should focus the agent bottom-slot view in the input phase")
+	if !m.showAgent || m.agentPhase != agentPhaseInput {
+		t.Fatal("7 should open the full-screen agent in the input phase")
 	}
 	for _, r := range "merge" {
 		mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -119,15 +119,15 @@ func TestTUI_AgentFlow(t *testing.T) {
 	if m.agentOffset != 1 {
 		t.Errorf("j should scroll the output, offset=%d", m.agentOffset)
 	}
-	// esc leaves the agent view (back to the Graph view)
+	// esc closes the full-screen agent
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = mm.(Model)
-	if m.bottomView != bvGraph {
-		t.Error("esc should leave the agent view back to Graph")
+	if m.showAgent {
+		t.Error("esc should close the agent view")
 	}
-	// a stale agent msg after leaving is ignored (phase not advanced)
+	// a stale agent msg after leaving is ignored (agent stays closed)
 	mm, _ = m.Update(agentProposedMsg{commands: []string{"x"}})
-	if mm.(Model).bottomView == bvAgent {
-		t.Error("a stale agent msg must not re-enter the agent view")
+	if mm.(Model).showAgent {
+		t.Error("a stale agent msg must not re-open the agent view")
 	}
 }

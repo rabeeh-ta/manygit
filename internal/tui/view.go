@@ -263,17 +263,27 @@ func (m Model) renderRow(idx int, r *repoVM, nameW int) string {
 	return cursor + "  " + nameCell + " " + dirtyCell + " " + statusCell
 }
 
-func (m Model) renderRepoBody(d dims) string {
-	var b strings.Builder
+func (m Model) renderRepoBody(d dims, height int) string {
+	// Build the grouped rows tracking the cursor's line, then window to `height`
+	// so the highlighted repo stays visible instead of running off the bottom.
+	var lines []string
+	cursorLine := 0
 	lastGroup := ""
 	for i, r := range m.visibleRepos() {
 		if r.repo.Group != lastGroup {
-			b.WriteString(styleGroup.Render(r.repo.Group) + "\n")
+			lines = append(lines, styleGroup.Render(r.repo.Group))
 			lastGroup = r.repo.Group
 		}
-		b.WriteString(m.renderRow(i, r, d.nameW) + "\n")
+		if i == m.cursor {
+			cursorLine = len(lines)
+		}
+		lines = append(lines, m.renderRow(i, r, d.nameW))
 	}
-	return b.String()
+	if height < 1 {
+		height = 1
+	}
+	start, end := window(len(lines), cursorLine, height)
+	return strings.Join(lines[start:end], "\n")
 }
 
 func (m Model) renderBranches(contentW, innerH int) string {
@@ -306,7 +316,7 @@ func (m Model) bottomTabs() string {
 	views := []struct {
 		n    int
 		name string
-	}{{4, "Graph"}, {5, "Changes"}, {6, "Output"}, {7, "Agent"}}
+	}{{4, "Graph"}, {5, "Changes"}, {6, "Output"}}
 	activeStyle := lipgloss.NewStyle().Reverse(true).Bold(true)
 	tabs := make([]string, len(views))
 	for i, v := range views {
@@ -339,8 +349,6 @@ func (m Model) bottomHint() string {
 		h = "esc: back"
 	case m.bottomView == bvChanges && len(m.changeFiles) > 0:
 		h = "enter: diff   esc: back"
-	case m.bottomView == bvAgent:
-		h = "z: zoom for room"
 	}
 	if h == "" {
 		return ""
@@ -355,8 +363,6 @@ func (m Model) renderBottom(contentW, innerH int) string {
 		return m.renderChangesView(contentW, innerH)
 	case bvOutput:
 		return m.renderOutputView(contentW, innerH)
-	case bvAgent:
-		return m.agentBody(contentW, innerH)
 	default:
 		return m.renderGraphView(contentW, innerH)
 	}
@@ -757,6 +763,9 @@ func (m Model) View() string {
 	if m.showHelp {
 		return m.helpView()
 	}
+	if m.showAgent {
+		return m.agentView()
+	}
 	if m.zoomed {
 		return m.zoomedView()
 	}
@@ -779,7 +788,7 @@ func (m Model) View() string {
 	}
 	reposInner := max((d.bodyH-2)-scriptsInner, 3)
 	reposPanel := titledPanel(1, "Repos", d.leftW, reposInner, m.focus == panelRepos,
-		lipgloss.NewStyle().MaxWidth(d.leftW-2).Render(clampLines(m.renderRepoBody(d), reposInner)))
+		lipgloss.NewStyle().MaxWidth(d.leftW-2).Render(clampLines(m.renderRepoBody(d, reposInner), reposInner)))
 	scriptsPanel := titledPanel(2, "Scripts", d.leftW, scriptsInner, m.focus == panelScripts,
 		clampLines(m.renderScripts(d.leftW-2, scriptsInner), scriptsInner))
 	left := lipgloss.JoinVertical(lipgloss.Left, reposPanel, scriptsPanel)
@@ -835,7 +844,7 @@ func (m Model) zoomedView() string {
 	default: // panelRepos
 		zd := dims{leftW: innerW, rightW: innerW, bodyH: innerH, nameW: max(8, contentW-20)}
 		panel = titledPanel(1, "Repos", innerW, innerH, true,
-			clampLines(m.renderRepoBody(zd), innerH))
+			clampLines(m.renderRepoBody(zd, innerH), innerH))
 	}
 	view := lipgloss.JoinVertical(lipgloss.Left, title, "", panel, m.bottomBar(tw))
 	return lipgloss.NewStyle().MaxWidth(tw).Render(view)

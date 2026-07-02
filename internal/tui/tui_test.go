@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -472,6 +473,31 @@ func TestTUI_GraphDrillDown(t *testing.T) {
 	}
 }
 
+// A long repos list windows to keep the cursor visible (scrolls) instead of
+// running off the bottom of the panel.
+func TestTUI_ReposScroll(t *testing.T) {
+	var repos []discover.Repo
+	for i := 0; i < 20; i++ {
+		repos = append(repos, discover.Repo{Path: fmt.Sprintf("/x/r%02d", i), Name: fmt.Sprintf("repo-%02d", i), Group: "g"})
+	}
+	m := New(config.Default(), repos, nil)
+	m.width, m.height = 100, 20
+	d := computeDims(100, 20)
+
+	m.cursor = 18 // deep in the list
+	body := stripANSI(m.renderRepoBody(d, 6))
+	if !strings.Contains(body, "repo-18") {
+		t.Errorf("a deep cursor (repo-18) must stay visible:\n%s", body)
+	}
+	if strings.Contains(body, "repo-00") {
+		t.Error("a deep cursor should scroll the top of the list off")
+	}
+	m.cursor = 0
+	if !strings.Contains(stripANSI(m.renderRepoBody(d, 6)), "repo-00") {
+		t.Error("cursor at the top should show the first repo")
+	}
+}
+
 // Regaining terminal-window focus refetches every repo (like `r`).
 func TestTUI_FocusRefetch(t *testing.T) {
 	cfg, repos := twoRepos(t)
@@ -643,7 +669,7 @@ func TestTUI_RepoRowsFitPanelContent(t *testing.T) {
 		m := loadAll(t, New(cfg, repos, nil), w, 30)
 		d := computeDims(w, 30)
 		content := d.leftW - 2 // panelStyle Padding(0,1) → content area is leftW-2
-		for _, line := range strings.Split(m.renderRepoBody(d), "\n") {
+		for _, line := range strings.Split(m.renderRepoBody(d, 30), "\n") {
 			if line == "" {
 				continue
 			}

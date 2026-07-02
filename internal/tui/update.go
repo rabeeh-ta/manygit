@@ -153,7 +153,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case agentProposedMsg:
-		if m.bottomView == bvAgent && m.agentPhase == agentPhaseThinking {
+		if m.showAgent && m.agentPhase == agentPhaseThinking {
 			if msg.err != nil {
 				m.agentErr = msg.err.Error()
 				m.agentPhase = agentPhaseInput
@@ -167,7 +167,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case agentExecutedMsg:
-		if m.bottomView == bvAgent && m.agentPhase == agentPhaseRunning {
+		if m.showAgent && m.agentPhase == agentPhaseRunning {
 			m.agentOutput = msg.output
 			m.agentOffset = 0
 			m.agentPhase = agentPhaseDone
@@ -247,9 +247,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
 		return m.handleSettingsKey(msg)
 	}
-	// The agent bottom-slot view captures keys (typing an instruction, etc.) when
-	// it's the focused pane; esc there returns to the Graph view.
-	if m.focus == panelBottom && m.bottomView == bvAgent {
+	if m.showAgent {
 		return m.handleAgentKey(msg)
 	}
 	if m.showGraph {
@@ -302,9 +300,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = panelBottom
 		m.bottomView = bvOutput
 	case "7":
-		// AI agent — a bottom-slot view alongside 4/5/6 (z to zoom for room).
-		m.focus = panelBottom
-		m.bottomView = bvAgent
+		// Full-screen AI agent (one-shot command helper over the workspace).
+		m.showAgent = true
+		m.agentPhase = agentPhaseInput
+		m.agentInputBuf = ""
+		m.agentCommands = nil
+		m.agentOutput = nil
+		m.agentOffset = 0
+		m.agentErr = ""
 	case "tab":
 		m.focus = (m.focus + 1) % panelCount
 	case "down", "j":
@@ -594,7 +597,7 @@ func (m Model) handleAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case agentPhaseInput:
 		switch msg.Type {
 		case tea.KeyEsc:
-			m.bottomView = bvGraph
+			m.showAgent = false
 		case tea.KeyEnter:
 			if strings.TrimSpace(m.agentInputBuf) == "" {
 				return m, nil
@@ -620,7 +623,7 @@ func (m Model) handleAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// if the user re-enters the agent (guard needs phase==thinking).
 			m.agentPhase = agentPhaseInput
 			m.agentErr = ""
-			m.bottomView = bvGraph
+			m.showAgent = false
 		}
 	case agentPhaseProposed:
 		switch msg.String() {
@@ -642,7 +645,7 @@ func (m Model) handleAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.agentOutput = nil
 			m.agentOffset = 0
 		case "esc":
-			m.bottomView = bvGraph
+			m.showAgent = false
 		case "down", "j":
 			m.agentOffset = clampInt(m.agentOffset+1, 0, max(0, len(m.agentOutput)-1))
 		case "up", "k":
