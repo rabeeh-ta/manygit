@@ -259,13 +259,27 @@ func CommitFiles(dir, ref string) ([]FileChange, error) {
 // WorkingFileDiff returns the colored diff of a working-tree file vs HEAD.
 func WorkingFileDiff(dir, path string) ([]string, error) {
 	out, err := run(dir, "diff", "HEAD", "--color=always", "--", path)
-	if err != nil {
-		return nil, err
+	if err != nil || strings.TrimSpace(out) == "" {
+		// git diff HEAD shows nothing for untracked files (and errors when the
+		// repo has no HEAD yet); show the new file's whole content as an added
+		// diff instead of an empty/error view.
+		out = runDiff(dir, "diff", "--no-index", "--color=always", "--", "/dev/null", path)
 	}
 	if strings.TrimSpace(out) == "" {
-		return []string{"(no diff — untracked/new file, not yet tracked by git)"}, nil
+		return []string{"(no textual changes — empty or binary file)"}, nil
 	}
 	return strings.Split(out, "\n"), nil
+}
+
+// runDiff runs a git diff and returns stdout regardless of exit code: `git diff`
+// exits 1 when there ARE differences (esp. --no-index), which is not an error.
+func runDiff(dir string, args ...string) string {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	_ = cmd.Run()
+	return strings.TrimRight(out.String(), "\n")
 }
 
 // CommitFileDiff returns the colored diff of a file within a commit.

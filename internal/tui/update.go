@@ -276,7 +276,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.branchCursor--
 		}
 	case "enter":
-		// In the Changes view, enter opens the selected file's diff in-place.
+		// Graph → drill into the selected commit/WIP's changed files.
+		if m.focus == panelBottom && m.bottomView == bvGraph {
+			m.bottomView = bvChanges
+			m.changeShowDiff = false
+			return m, m.loadChangesCmd()
+		}
+		// Changes → open the highlighted file's diff in-place.
 		if m.focus == panelBottom && m.bottomView == bvChanges && !m.changeShowDiff {
 			if r := m.currentVisible(vis); r != nil && m.changeCursor < len(m.changeFiles) {
 				return m, diffCmd(r.repo.Path, m.selectedRef(), m.changeFiles[m.changeCursor].Path)
@@ -289,9 +295,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd := m.checkoutSelected(vis)
 		return m, cmd
 	case "esc":
-		// Close the in-place diff, back to the file list.
-		if m.focus == panelBottom && m.bottomView == bvChanges && m.changeShowDiff {
-			m.changeShowDiff = false
+		// Back-navigate the bottom slot: diff → file list → graph.
+		if m.focus == panelBottom && m.bottomView == bvChanges {
+			if m.changeShowDiff {
+				m.changeShowDiff = false
+			} else {
+				m.bottomView = bvGraph
+			}
 		}
 	case "o":
 		if r := m.currentVisible(vis); r != nil {

@@ -322,6 +322,28 @@ func (m Model) bottomTabs() string {
 	return strings.Join(tabs, styleDim.Render("│"))
 }
 
+// bottomHint is a short, contextual action hint appended to the bottom panel's
+// title while it's focused, so the graph → files → diff drill-down is
+// discoverable (ASCII only — it sits in the width-measured title border).
+func (m Model) bottomHint() string {
+	if m.focus != panelBottom {
+		return ""
+	}
+	var h string
+	switch {
+	case m.bottomView == bvGraph:
+		h = "enter: its files" // WIP is always drillable, even with no commits
+	case m.bottomView == bvChanges && m.changeShowDiff:
+		h = "esc: back"
+	case m.bottomView == bvChanges && len(m.changeFiles) > 0:
+		h = "enter: diff   esc: back"
+	}
+	if h == "" {
+		return ""
+	}
+	return styleDim.Render("   " + h)
+}
+
 // renderBottom renders the active view of the multi-view bottom slot.
 func (m Model) renderBottom(contentW, innerH int) string {
 	switch m.bottomView {
@@ -574,10 +596,12 @@ func (m Model) keysBody() string {
 		kr("F", "only changed / unsynced repos"),
 		kr("/", "filter the focused list"),
 		"",
-		styleGroup.Render("Graph (4) & Changes (5)"),
+		styleGroup.Render("Graph (4) -> Changes (5)"),
 		kr("4 j/k", "select a commit (WIP on top)"),
-		kr("5", "the selection's changed files"),
-		kr("5 enter", "open file diff (esc = back)"),
+		kr("4 enter", "show its changed files"),
+		kr("5 j/k", "pick a file"),
+		kr("5 enter", "view its diff"),
+		kr("esc", "back: diff / files / graph"),
 	}
 	right := []string{
 		styleGroup.Render("Actions") + styleDim.Render(" on the > repo"),
@@ -697,7 +721,7 @@ func (m Model) View() string {
 		clampLines(m.renderBranches(d.rightW-2, topInner), topInner))
 	// bottom multi-view slot: a tab bar of all three views (active bracketed) so
 	// the 5 Changes / 6 Output views are discoverable, not just the current one.
-	bottom := titledBarBox(m.bottomTabs(), d.rightW, botInner, m.focus == panelBottom,
+	bottom := titledBarBox(m.bottomTabs()+m.bottomHint(), d.rightW, botInner, m.focus == panelBottom,
 		clampLines(m.renderBottom(d.rightW-2, botInner), botInner))
 	right := lipgloss.JoinVertical(lipgloss.Left, branches, bottom)
 

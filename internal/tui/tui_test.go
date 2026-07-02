@@ -418,6 +418,60 @@ func TestTUI_BottomViewsAndSelection(t *testing.T) {
 	}
 }
 
+// From the Graph, enter drills into the selected commit's changed files; enter on
+// a file opens its diff; esc walks back diff → files → graph.
+func TestTUI_GraphDrillDown(t *testing.T) {
+	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	path := m.currentVisible(m.visibleRepos()).repo.Path
+	mm, _ := m.Update(graphMsg{path: path, lines: []string{"* aaaaaaa first"},
+		commits: []git.GraphEntry{{Line: 0, Hash: "aaaaaaa"}}})
+	m = mm.(Model)
+
+	mm, _ = m.Update(rk("4")) // Graph
+	m = mm.(Model)
+	mm, _ = m.Update(rk("j")) // select the commit (graphSel 1)
+	m = mm.(Model)
+	if m.graphSel != 1 {
+		t.Fatalf("j should select the commit, graphSel=%d", m.graphSel)
+	}
+	// enter drills into that commit's Changes
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm.(Model)
+	if m.bottomView != bvChanges || cmd == nil {
+		t.Fatal("enter on the graph should drill into Changes and load its files")
+	}
+	mm, _ = m.Update(changesMsg{path: path, ref: "aaaaaaa", files: []git.FileChange{{Status: "M", Path: "x.go"}}})
+	m = mm.(Model)
+	if len(m.changeFiles) != 1 {
+		t.Fatal("the commit's files should load")
+	}
+	// enter on the file opens its diff
+	mm, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm.(Model)
+	if cmd == nil {
+		t.Fatal("enter on a file should load its diff")
+	}
+	mm, _ = m.Update(diffMsg{path: path, ref: "aaaaaaa", lines: []string{"@@ -1 +1 @@", "-a", "+b"}})
+	m = mm.(Model)
+	if !m.changeShowDiff {
+		t.Fatal("diff should be shown in-place")
+	}
+	// esc: diff → file list
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = mm.(Model)
+	if m.changeShowDiff || m.bottomView != bvChanges {
+		t.Error("esc from the diff should return to the file list")
+	}
+	// esc: file list → graph
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = mm.(Model)
+	if m.bottomView != bvGraph {
+		t.Error("esc from the file list should return to the graph")
+	}
+}
+
 // Action status messages set the status line and schedule an expiry; a matching
 // expiry clears it, but a stale one (older generation) must not.
 func TestTUI_StatusLineExpires(t *testing.T) {

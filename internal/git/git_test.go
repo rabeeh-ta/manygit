@@ -255,6 +255,36 @@ func TestFileDiffs(t *testing.T) {
 	}
 }
 
+func TestWorkingFileDiff_Untracked(t *testing.T) {
+	dir := initRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("brand\nnew\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wd, err := WorkingFileDiff(dir, "new.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(wd, "\n")
+	if !strings.Contains(joined, "new file") || !strings.Contains(joined, "brand") {
+		t.Errorf("untracked file diff should show its added content, got:\n%s", joined)
+	}
+}
+
+func TestWorkingFileDiff_NoCommits(t *testing.T) {
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-q", "-b", "main") // no commits -> no HEAD
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("hello there\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wd, err := WorkingFileDiff(dir, "f.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(wd, "\n"), "hello there") {
+		t.Errorf("a new file in a commitless repo should still show its content: %v", wd)
+	}
+}
+
 func TestGraphLog_ReturnsCommits(t *testing.T) {
 	dir := initRepo(t)
 	lines, err := GraphLog(dir, 10)

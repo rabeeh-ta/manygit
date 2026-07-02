@@ -82,12 +82,15 @@ advertised:
 
 - **`4` Graph** — the colored `git log --graph` with a selection cursor. The top
   entry is `WIP (uncommitted changes)`; below it are commits. `j`/`k` move the
-  cursor between commits (connector lines are skipped). The selected entry drives
-  the Changes view. Long branch names in the ref decorations are shortened so they
-  don't push the commit subject off-screen (the Branches panel shows them in full).
+  cursor between commits (connector lines are skipped). Press **`enter` to drill
+  into the selected entry's changed files** (jumps to the Changes view). Long
+  branch names in the ref decorations are shortened so they don't push the commit
+  subject off-screen (the Branches panel shows them in full).
 - **`5` Changes** — the changed files of the selected graph entry: the working
   tree (when WIP is selected) or a commit's files. `j`/`k` pick a file; `enter`
-  opens its colored diff in-place; `esc` returns to the list.
+  opens its colored diff in-place (new/untracked files show their full content);
+  `esc` steps back — from a diff to the file list, from the file list to the graph.
+  The panel title shows a contextual hint (`enter: diff`, `esc: back`) when focused.
 - **`6` Output** — the live combined stdout+stderr of the last script run. Running
   a script (from the Scripts panel) flips the bottom slot here and streams output
   as it arrives, auto-following the tail; `j`/`k` scroll up to stop following. The
