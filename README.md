@@ -1,180 +1,93 @@
 # manygit
 
-A stripped-down, lazygit-style TUI for managing **many git repos at once** —
-see at a glance each repo's current branch and whether it's in sync / ahead /
-behind / dirty, and safely fetch, fast-forward pull, push, or switch branches on
-the highlighted repo.
-
-Each Repos row shows the repo name followed by its current branch in dim parens
-(`name (branch)`), truncated to fit the column.
+A lazygit-style terminal UI for managing **many git repos at once**. See every
+repo's branch and whether it's ahead / behind / dirty, and fetch, pull, push, or
+switch branches on the highlighted one — plus a commit graph, a script runner,
+and an AI command helper.
 
 ## Install
 
-Requires Go 1.24+. (Go's auto-toolchain will fetch 1.24 for you if your host
-has Go 1.21+ installed — you don't need to manually upgrade first.)
+macOS / Linux:
 
 ```bash
-go install .            # from a clone, installs `manygit` into $GOBIN
-# or
-make build && cp manygit ~/bin/
+curl -fsSL https://raw.githubusercontent.com/rabeeh-ta/manygit/main/install.sh | bash
 ```
 
-> Module path is `manygit` (local). To `go install` by URL, change the module
-> path in `go.mod` to your host (e.g. `github.com/blend-ed/manygit`) and update
-> internal imports.
+This drops `manygit` into `~/.local/bin` (adding it to your PATH if needed), so
+you can run `manygit` from anywhere. On each launch it checks for a newer release
+and offers to update itself.
+
+<details>
+<summary>From source (needs Go 1.24+)</summary>
+
+```bash
+git clone https://github.com/rabeeh-ta/manygit && cd manygit
+go build -o ~/.local/bin/manygit .
+```
+</details>
 
 ## Usage
 
 ```bash
-manygit                       # scan the current directory
-manygit --root ~/work         # scan a specific folder
-MANYGIT_ROOT=~/work manygit
+manygit                 # scan the current directory
+manygit --root ~/work   # scan a specific folder
 ```
 
-Discovery walks the root up to `max_depth` (default 3), collecting every
-directory containing `.git`, pruning `node_modules`/`vendor`/etc., grouping by
-parent directory.
+manygit walks the folder (depth 3) for git repos and groups them by parent.
 
 ## Keys
 
-Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi-select.
+Actions apply to the **highlighted** repo (the `>` cursor).
 
 | Key | Action |
 |---|---|
-| `1` `2` `3`, `tab` | focus Repos / Scripts / Branches (tab cycles all slots) |
-| `4` `5` `6` `7` | bottom slot: **Graph** / **Changes** / **Output** / **Agent** |
-| `z` | zoom the focused pane full-screen (toggle; follows focus) |
-| `j`/`k`, `↑`/`↓` | move within the focused panel |
-| `space` | Repos panel → view branches · Scripts panel → run the script · else → back to Repos |
-| `enter` | Changes view: open the highlighted file's diff in-place (`esc` = back) |
-| `g` | full-screen colored commit graph (`j`/`k` scroll, `esc`/`g` close) |
-| `F` | toggle: show only repos with changes / ahead / behind |
-| `/` | filter the focused list by name — repos or scripts (whichever pane is focused); `esc` clears |
-| `s` | sync the highlighted repo (fetch + `pull --ff-only`; dirty repos skipped) |
-| `p` | push the highlighted repo (`git push`) |
-| `f` / `r` | fetch the highlighted repo / refetch all (also auto-refetches when the terminal window regains focus) |
-| `b` / `enter` | checkout the selected branch (in the Branches panel; dirty repos skipped) |
-| `o` | open the highlighted repo in `open_cmd` (default `code`) |
-| `?` | settings & help overlay — pick a theme, toggle glyphs, set your editor (see below) |
+| `1` `2` `3` | focus Repos / Scripts / Branches |
+| `4` `5` `6` `7` | bottom slot: Graph / Changes / Output / Agent |
+| `j` `k` | move within the focused panel |
+| `space` | Repos → view branches · Scripts → run the script |
+| `s` / `p` | sync (fetch + ff-pull) / push the highlighted repo |
+| `f` / `r` | fetch one / refetch all |
+| `g` | full-screen commit graph |
+| `F` | show only repos with changes / ahead / behind |
+| `/` | filter the focused list by name |
+| `o` | open the repo in your editor |
+| `z` | zoom the focused pane |
+| `?` | settings & help (themes, AI harness, glyphs, editor) |
 | `q` | quit |
 
-## Status column
-
-| Glyph | Meaning |
-|---|---|
-| `ok` | up to date with its upstream |
-| `↑N` | ahead N — commits to **push** |
-| `↓N` | behind N — commits to **pull** |
-| `↑N ↓M` | diverged (N ahead, M behind) |
-| `*N` | N files changed (dirty working tree) |
-| `~` / `.` | fetching / loading |
-| `!` | no upstream, or error |
-
-Ahead/behind use `↑`/`↓` by default. Those are East-Asian *ambiguous* width —
-if your terminal renders them two cells wide, the column drifts; set
-`status_glyphs: ascii` (below) to use the always-aligned `+N` / `-N` instead.
-
-## Bottom panel (Graph / Changes / Output)
-
-The bottom-right slot is a multi-view panel switched with number keys. Its title
-is a tab bar — `[4 Graph] 5 Changes 6 Output` — with the active view bracketed
-(and a `*` on Output while a script is running), so all three views are always
-advertised:
-
-- **`4` Graph** — the colored `git log --graph` with a selection cursor. The top
-  entry is `WIP (uncommitted changes)`; below it are commits. `j`/`k` move the
-  cursor between commits (connector lines are skipped). Press **`enter` to drill
-  into the selected entry's changed files** (jumps to the Changes view). Long
-  branch names in the ref decorations are shortened so they don't push the commit
-  subject off-screen (the Branches panel shows them in full).
-- **`5` Changes** — the changed files of the selected graph entry: the working
-  tree (when WIP is selected) or a commit's files. `j`/`k` pick a file; `enter`
-  opens its colored diff in-place (new/untracked files show their full content);
-  `esc` steps back — from a diff to the file list, from the file list to the graph.
-  The panel title shows a contextual hint (`enter: diff`, `esc: back`) when focused.
-- **`6` Output** — the live combined stdout+stderr of the last script run. Running
-  a script (from the Scripts panel) flips the bottom slot here and streams output
-  as it arrives, auto-following the tail; `j`/`k` scroll up to stop following. The
-  panel title shows the script name and `(running)` until it exits; the status
-  line reports success or the failing exit.
-
-## Scripts panel
-
-The `[2] Scripts` panel (below Repos) lists shell scripts found near the root —
-root-level and one directory deep (e.g. `scripts/*.sh`), pruning
-`node_modules`/`.git`/etc. Both `*.sh` files and extensionless executables with a
-`#!` shebang (e.g. `scripts/sync-all`) are listed. The list scrolls to keep the
-cursor visible, and `/` filters it by name. Focus it with `2`, move with `j`/`k`,
-and press `space` to **run** the highlighted script: manygit runs it with `bash`
-in the background (non-interactive) and streams its combined output into the
-**Output** view (`6`), which the bottom slot switches to automatically. The status
-line reports success or the failing exit when it finishes.
-
-## Settings & themes (`?`)
-
-Press `?` for the Settings screen — a radio list you drive with `j`/`k` and
-`enter`:
-
-- **theme** — every theme is its own row; moving the cursor onto one **previews
-  it live**, `enter` selects it. `esc` without selecting reverts to the current one.
-- **AI harness** — pick the AI CLI used by the AI features (`claude` / `codex`);
-  uninstalled ones are grayed and can't be selected. The active harness also
-  shows in the bottom bar. manygit shells out to the CLI (its own auth, no keys).
-- **glyphs** — pick unicode (`↑↓`) or ascii (`+/-`) ahead/behind markers.
-- **editor** — `enter` opens an inline field to type the command `o` opens a repo with.
-
-Selections are saved to `~/.config/manygit/config.yml`. Press `tab` to flip to
-the keybindings + status-legend reference, and `esc` to close.
-
-Themes recolor the "chrome" (borders, cursor, titles, group headers, dividers)
-and the error color; the status colors (green ok, yellow ahead, cyan behind,
-orange dirty) stay standard so they read the same in every theme. Built-in
-themes — `default` plus `serika_dark`, `dracula`, `nord`, `catppuccin`, `8008`,
-their palettes adapted from [monkeytype](https://github.com/monkeytypegame/monkeytype).
-
-## Top-bar news feed
-
-When an AI [harness](#settings--themes-) is configured, the top bar (after the
-`manygit` brand) becomes a **news feed**: a beat after a fetch/refetch settles,
-manygit gathers commits from the **main branch** of each repo (`origin/main` /
-`origin/master`, falling back to local `main` / `master`) within the last **N
-days** (the *News window* setting — `1 / 3 / 7 / 14` days, default 3), asks the
-harness to summarize them into short headlines, and rotates through them
-(`news <headline>   (1/N)`, ~12s each). Only the main-branch commit *subjects* in
-the window are sent; a repo (or the whole workspace) with nothing in the window
-sends nothing — no headlines, no harness call. Without a harness — or while
-filtering — it falls back to the repo count.
+Status column: `ok` up to date · `↑N` ahead · `↓N` behind · `*N` dirty · `!` no
+upstream. Set `status_glyphs: ascii` (in config or `?`) if the arrows misalign.
 
 ## AI agent (`7`)
 
-`7` is the fourth bottom-slot view (alongside Graph/Changes/Output) — a one-shot
-**AI command helper** over the whole workspace. It's small; press `z` to zoom the
-pane full-screen while you work. Type an instruction (mostly git — "merge
-`feature/x` into main in the authoring repo", etc.); manygit sends it to the
-selected [harness](#settings--themes-) along with the **workspace context** (every
-repo, its branch and ahead/behind/dirty status). The harness returns the shell
-command(s); manygit shows them and runs them **only after you confirm** (`enter`/
-`y`; `esc`/`n` discards), then shows the output (`j`/`k` scroll). `esc` leaves the
-view. Requires an installed harness (see the bottom bar).
-
-> The commands come from the AI and can mutate your repos — that's why nothing
-> runs until you review and confirm. Commit/branch/tree data is sent to your
-> harness CLI (its own auth).
+Tab `7` is a one-shot AI command helper over all your repos. Press `enter` to
+type an instruction (e.g. "merge main into the authoring repo"); manygit sends it
+to your AI CLI (`claude` or `codex`, picked in `?`) with the workspace context,
+shows the git command(s) it proposes, and runs them **only after you confirm**.
+Number keys still switch panes while you're on it; `z` zooms for room.
 
 ## Config (optional)
 
-`~/.config/manygit/config.yml` (also written by the settings screen):
+`~/.config/manygit/config.yml` (also written by the `?` screen):
 
 ```yaml
 max_depth: 3
-concurrency: 8
 open_cmd: code
-status_glyphs: unicode   # ahead/behind arrows; use "ascii" for +N / -N if they misalign
-theme: default           # default | serika_dark | dracula | nord | catppuccin | 8008
-prune:
-  - node_modules
-  - vendor
+theme: default          # default | serika_dark | dracula | nord | catppuccin | 8008
+status_glyphs: unicode  # or "ascii"
 ```
 
-manygit never writes to the folder you launch from, and never stashes,
-discards, force-pushes, merges, or rebases.
+manygit never writes to the folder you launch from, and never stashes, discards,
+force-pushes, merges, or rebases on its own.
+
+## Releasing (maintainer)
+
+Cut a release by pushing a version tag — GitHub Actions builds the binaries and
+publishes the release; the installer and self-updater pick it up automatically:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The version is taken from the tag; nothing in the code needs editing.

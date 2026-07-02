@@ -1,0 +1,39 @@
+# Builds manygit for macOS + Linux (Intel & Apple Silicon) and publishes a
+# GitHub Release. Triggered by pushing a v* tag (see .github/workflows/release.yml).
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: manygit
+    main: .
+    binary: manygit
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: manygit
+    formats: [tar.gz]
+    # e.g. manygit_darwin_arm64.tar.gz — the installer and self-updater expect
+    # exactly this name.
+    name_template: "manygit_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: rabeeh-ta
+    name: manygit
