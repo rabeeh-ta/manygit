@@ -18,6 +18,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
+	case tea.FocusMsg:
+		// Terminal window regained focus — refresh every repo (like `r`).
+		return m, m.refetchAllCmd()
 	case statusMsg:
 		for _, r := range m.repos {
 			if r.repo.Path == msg.path {
@@ -150,7 +153,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case agentProposedMsg:
-		if m.showAgent && m.agentPhase == agentPhaseThinking {
+		if m.bottomView == bvAgent && m.agentPhase == agentPhaseThinking {
 			if msg.err != nil {
 				m.agentErr = msg.err.Error()
 				m.agentPhase = agentPhaseInput
@@ -164,7 +167,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case agentExecutedMsg:
-		if m.showAgent && m.agentPhase == agentPhaseRunning {
+		if m.bottomView == bvAgent && m.agentPhase == agentPhaseRunning {
 			m.agentOutput = msg.output
 			m.agentOffset = 0
 			m.agentPhase = agentPhaseDone
@@ -213,6 +216,20 @@ func (m Model) runScriptCmd() tea.Cmd {
 	return startScriptCmd(vs[m.scriptCursor].Path, m.outputRun)
 }
 
+// refetchAllCmd fetches every not-already-fetching repo (the `r` action, also
+// fired when the terminal window regains focus).
+func (m Model) refetchAllCmd() tea.Cmd {
+	var cmds []tea.Cmd
+	for _, r := range m.repos {
+		if r.fetching {
+			continue
+		}
+		r.fetching = true
+		cmds = append(cmds, fetchCmd(m.sem, r.repo.Path))
+	}
+	return tea.Batch(cmds...)
+}
+
 // appendOutput adds a line to the Output view, keeping the view pinned to the
 // tail (auto-follow) unless the user has scrolled up.
 func (m *Model) appendOutput(line string) {
@@ -230,7 +247,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
 		return m.handleSettingsKey(msg)
 	}
-	if m.showAgent {
+	// The agent bottom-slot view captures keys (typing an instruction, etc.) when
+	// it's the focused pane; esc there returns to the Graph view.
+	if m.focus == panelBottom && m.bottomView == bvAgent {
 		return m.handleAgentKey(msg)
 	}
 	if m.showGraph {
@@ -283,13 +302,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = panelBottom
 		m.bottomView = bvOutput
 	case "7":
-		// Full-screen AI agent (one-shot command helper over the workspace).
-		m.showAgent = true
-		m.agentPhase = agentPhaseInput
-		m.agentInputBuf = ""
-		m.agentCommands = nil
-		m.agentOutput = nil
-		m.agentErr = ""
+		// AI agent — a bottom-slot view alongside 4/5/6 (z to zoom for room).
+		m.focus = panelBottom
+		m.bottomView = bvAgent
 	case "tab":
 		m.focus = (m.focus + 1) % panelCount
 	case "down", "j":
@@ -418,15 +433,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, fetchCmd(m.sem, r.repo.Path)
 		}
 	case "r":
-		var cmds []tea.Cmd
-		for _, r := range m.repos {
-			if r.fetching {
-				continue
-			}
-			r.fetching = true
-			cmds = append(cmds, fetchCmd(m.sem, r.repo.Path))
-		}
-		return m, tea.Batch(cmds...)
+		return m, m.refetchAllCmd()
 	case "s":
 		var cmds []tea.Cmd
 		for _, r := range m.targets() {
@@ -587,7 +594,7 @@ func (m Model) handleAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case agentPhaseInput:
 		switch msg.Type {
 		case tea.KeyEsc:
-			m.showAgent = false
+			m.bottomView = bvGraph
 		case tea.KeyEnter:
 			if strings.TrimSpace(m.agentInputBuf) == "" {
 				return m, nil
@@ -609,7 +616,11 @@ func (m Model) handleAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case agentPhaseThinking:
 		if msg.Type == tea.KeyEsc {
-			m.showAgent = false // a late agentProposedMsg is dropped (guarded)
+			// Cancel the wait AND reset the phase, so a late reply is dropped even
+			// if the user re-enters the agent (guard needs phase==thinking).
+			m.agentPhase = agentPhaseInput
+			m.agentErr = ""
+			m.bottomView = bvGraph
 		}
 	case agentPhaseProposed:
 		switch msg.String() {
@@ -631,7 +642,7 @@ func (m Model) handleAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.agentOutput = nil
 			m.agentOffset = 0
 		case "esc":
-			m.showAgent = false
+			m.bottomView = bvGraph
 		case "down", "j":
 			m.agentOffset = clampInt(m.agentOffset+1, 0, max(0, len(m.agentOutput)-1))
 		case "up", "k":

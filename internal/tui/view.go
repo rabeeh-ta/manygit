@@ -306,7 +306,7 @@ func (m Model) bottomTabs() string {
 	views := []struct {
 		n    int
 		name string
-	}{{4, "Graph"}, {5, "Changes"}, {6, "Output"}}
+	}{{4, "Graph"}, {5, "Changes"}, {6, "Output"}, {7, "Agent"}}
 	activeStyle := lipgloss.NewStyle().Reverse(true).Bold(true)
 	tabs := make([]string, len(views))
 	for i, v := range views {
@@ -339,6 +339,8 @@ func (m Model) bottomHint() string {
 		h = "esc: back"
 	case m.bottomView == bvChanges && len(m.changeFiles) > 0:
 		h = "enter: diff   esc: back"
+	case m.bottomView == bvAgent:
+		h = "z: zoom for room"
 	}
 	if h == "" {
 		return ""
@@ -353,6 +355,8 @@ func (m Model) renderBottom(contentW, innerH int) string {
 		return m.renderChangesView(contentW, innerH)
 	case bvOutput:
 		return m.renderOutputView(contentW, innerH)
+	case bvAgent:
+		return m.agentBody(contentW, innerH)
 	default:
 		return m.renderGraphView(contentW, innerH)
 	}
@@ -752,9 +756,6 @@ func (m Model) View() string {
 	}
 	if m.showHelp {
 		return m.helpView()
-	}
-	if m.showAgent {
-		return m.agentView()
 	}
 	if m.zoomed {
 		return m.zoomedView()

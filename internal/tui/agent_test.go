@@ -9,6 +9,30 @@ import (
 	"manygit/internal/git"
 )
 
+// Leaving the agent with esc while it's thinking must reset the phase, so a late
+// harness reply can't surface stale commands when you re-enter.
+func TestTUI_AgentThinkingEscDropsStaleReply(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("7")})
+	m = mm.(Model)
+	m.agentPhase = agentPhaseThinking // pretend a request is in flight
+	// esc leaves and cancels the wait
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = mm.(Model)
+	if m.bottomView != bvGraph || m.agentPhase != agentPhaseInput {
+		t.Fatalf("thinking+esc should leave (bvGraph) and reset phase to input, got view=%d phase=%d", m.bottomView, m.agentPhase)
+	}
+	// re-enter the agent; the late reply from the abandoned request must be dropped
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("7")})
+	m = mm.(Model)
+	mm, _ = m.Update(agentProposedMsg{commands: []string{"cd /a && git push --force"}})
+	m = mm.(Model)
+	if m.agentPhase == agentPhaseProposed {
+		t.Error("a stale reply after re-entering must NOT surface proposed commands")
+	}
+}
+
 func TestParseCommands(t *testing.T) {
 	got := parseCommands("```sh\ncd /a && git merge x\n\n# risky: no upstream\ncd /b && git pull\n```")
 	want := []string{"cd /a && git merge x", "# risky: no upstream", "cd /b && git pull"}
@@ -46,8 +70,8 @@ func TestTUI_AgentFlow(t *testing.T) {
 
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("7")})
 	m = mm.(Model)
-	if !m.showAgent || m.agentPhase != agentPhaseInput {
-		t.Fatal("7 should open the agent input")
+	if m.focus != panelBottom || m.bottomView != bvAgent || m.agentPhase != agentPhaseInput {
+		t.Fatal("7 should focus the agent bottom-slot view in the input phase")
 	}
 	for _, r := range "merge" {
 		mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -95,15 +119,15 @@ func TestTUI_AgentFlow(t *testing.T) {
 	if m.agentOffset != 1 {
 		t.Errorf("j should scroll the output, offset=%d", m.agentOffset)
 	}
-	// esc closes
+	// esc leaves the agent view (back to the Graph view)
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = mm.(Model)
-	if m.showAgent {
-		t.Error("esc should close the agent")
+	if m.bottomView != bvGraph {
+		t.Error("esc should leave the agent view back to Graph")
 	}
-	// a stale agent msg after closing is ignored
+	// a stale agent msg after leaving is ignored (phase not advanced)
 	mm, _ = m.Update(agentProposedMsg{commands: []string{"x"}})
-	if mm.(Model).showAgent {
-		t.Error("a stale agent msg must not reopen the agent")
+	if mm.(Model).bottomView == bvAgent {
+		t.Error("a stale agent msg must not re-enter the agent view")
 	}
 }

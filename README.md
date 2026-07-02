@@ -42,7 +42,7 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 | Key | Action |
 |---|---|
 | `1` `2` `3`, `tab` | focus Repos / Scripts / Branches (tab cycles all slots) |
-| `4` `5` `6` | bottom slot: **Graph** / **Changes** / **Output** |
+| `4` `5` `6` `7` | bottom slot: **Graph** / **Changes** / **Output** / **Agent** |
 | `z` | zoom the focused pane full-screen (toggle; follows focus) |
 | `j`/`k`, `↑`/`↓` | move within the focused panel |
 | `space` | Repos panel → view branches · Scripts panel → run the script · else → back to Repos |
@@ -52,7 +52,7 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 | `/` | filter the focused list by name — repos or scripts (whichever pane is focused); `esc` clears |
 | `s` | sync the highlighted repo (fetch + `pull --ff-only`; dirty repos skipped) |
 | `p` | push the highlighted repo (`git push`) |
-| `f` / `r` | fetch the highlighted repo / refetch all |
+| `f` / `r` | fetch the highlighted repo / refetch all (also auto-refetches when the terminal window regains focus) |
 | `b` / `enter` | checkout the selected branch (in the Branches panel; dirty repos skipped) |
 | `o` | open the highlighted repo in `open_cmd` (default `code`) |
 | `?` | settings & help overlay — pick a theme, toggle glyphs, set your editor (see below) |
@@ -145,13 +145,15 @@ count. Commit subjects are sent to your harness CLI.
 
 ## AI agent (`7`)
 
-Press `7` for a full-screen one-shot **AI command helper** over the whole
-workspace. Type an instruction (mostly git — "merge `feature/x` into main in the
-authoring repo", etc.); manygit sends it to the selected [harness](#settings--themes-)
-along with the **workspace context** (every repo, its branch and ahead/behind/dirty
-status). The harness returns the shell command(s); manygit shows them and runs
-them **only after you confirm** (`enter`/`y`; `esc`/`n` discards), then shows the
-output. `esc` closes. Requires an installed harness (see the bottom bar).
+`7` is the fourth bottom-slot view (alongside Graph/Changes/Output) — a one-shot
+**AI command helper** over the whole workspace. It's small; press `z` to zoom the
+pane full-screen while you work. Type an instruction (mostly git — "merge
+`feature/x` into main in the authoring repo", etc.); manygit sends it to the
+selected [harness](#settings--themes-) along with the **workspace context** (every
+repo, its branch and ahead/behind/dirty status). The harness returns the shell
+command(s); manygit shows them and runs them **only after you confirm** (`enter`/
+`y`; `esc`/`n` discards), then shows the output (`j`/`k` scroll). `esc` leaves the
+view. Requires an installed harness (see the bottom bar).
 
 > The commands come from the AI and can mutate your repos — that's why nothing
 > runs until you review and confirm. Commit/branch/tree data is sent to your

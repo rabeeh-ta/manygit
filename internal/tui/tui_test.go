@@ -472,6 +472,25 @@ func TestTUI_GraphDrillDown(t *testing.T) {
 	}
 }
 
+// Regaining terminal-window focus refetches every repo (like `r`).
+func TestTUI_FocusRefetch(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	for _, r := range m.repos {
+		r.fetching = false
+	}
+	mm, cmd := m.Update(tea.FocusMsg{})
+	m = mm.(Model)
+	if cmd == nil {
+		t.Error("a focus event should trigger a refetch command")
+	}
+	for _, r := range m.repos {
+		if !r.fetching {
+			t.Error("focus refetch should mark every repo fetching")
+		}
+	}
+}
+
 // z maximizes the focused pane; zoom follows focus; z again restores the layout.
 func TestTUI_Zoom(t *testing.T) {
 	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
