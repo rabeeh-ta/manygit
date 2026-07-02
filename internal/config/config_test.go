@@ -51,6 +51,24 @@ func TestLoad_OverridesFromFile(t *testing.T) {
 	}
 }
 
+func TestSaveLoadRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	cfg := Default()
+	cfg.Theme = "dracula"
+	cfg.OpenCmd = "nvim"
+	cfg.StatusGlyphs = "ascii"
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Theme != "dracula" || got.OpenCmd != "nvim" || got.StatusGlyphs != "ascii" {
+		t.Errorf("round-trip mismatch: %+v", got)
+	}
+}
+
 func TestStatusGlyphs(t *testing.T) {
 	if !Default().UnicodeGlyphs() {
 		t.Errorf("default should use unicode glyphs")

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"manygit/internal/config"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -177,11 +179,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFilterKey(msg)
 	}
 	if m.showHelp {
-		if s := msg.String(); s == "q" || s == "ctrl+c" {
-			return m, tea.Quit
-		}
-		m.showHelp = false // any other key dismisses help
-		return m, nil
+		return m.handleSettingsKey(msg)
 	}
 	if m.showGraph {
 		switch msg.String() {
@@ -404,6 +402,81 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.cursor = 0
 	return m, m.loadContextCmd()
+}
+
+// settingsRows is the number of editable rows in the settings overlay
+// (0 = theme, 1 = status glyphs, 2 = editor).
+const settingsRows = 3
+
+// handleSettingsKey drives the settings + help overlay: j/k move between the
+// editable rows, h/l (or enter) change the highlighted setting, enter on the
+// editor row opens an inline text edit, and ?/esc closes.
+func (m Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.editingOpenCmd {
+		switch msg.Type {
+		case tea.KeyEsc:
+			m.editingOpenCmd = false
+		case tea.KeyEnter:
+			m.cfg.OpenCmd = strings.TrimSpace(m.openCmdBuf)
+			m.editingOpenCmd = false
+			m.saveConfig()
+		case tea.KeyBackspace:
+			if len(m.openCmdBuf) > 0 {
+				m.openCmdBuf = m.openCmdBuf[:len(m.openCmdBuf)-1]
+			}
+		case tea.KeyRunes, tea.KeySpace:
+			m.openCmdBuf += string(msg.Runes)
+		}
+		return m, nil
+	}
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "?", "esc":
+		m.showHelp = false
+	case "down", "j":
+		m.settingsCursor = clampInt(m.settingsCursor+1, 0, settingsRows-1)
+	case "up", "k":
+		m.settingsCursor = clampInt(m.settingsCursor-1, 0, settingsRows-1)
+	case "right", "l":
+		m.settingsAdjust(1)
+	case "left", "h":
+		m.settingsAdjust(-1)
+	case "enter", " ":
+		if m.settingsCursor == 2 { // editor: start an inline text edit
+			m.editingOpenCmd = true
+			m.openCmdBuf = m.cfg.OpenCmd
+		} else {
+			m.settingsAdjust(1)
+		}
+	}
+	return m, nil
+}
+
+// settingsAdjust changes the highlighted setting by delta (theme cycles through
+// the theme list and applies live; glyphs toggles unicode/ascii) and persists.
+func (m *Model) settingsAdjust(delta int) {
+	switch m.settingsCursor {
+	case 0: // theme
+		n := len(themeList)
+		idx := ((themeIndex(m.cfg.Theme)+delta)%n + n) % n
+		m.cfg.Theme = themeList[idx].Name
+		applyTheme(themeList[idx])
+		m.saveConfig()
+	case 1: // status glyphs
+		if m.cfg.UnicodeGlyphs() {
+			m.cfg.StatusGlyphs = "ascii"
+		} else {
+			m.cfg.StatusGlyphs = "unicode"
+		}
+		m.saveConfig()
+	}
+}
+
+// saveConfig persists the current config (best-effort; a write failure leaves
+// the change applied for this session).
+func (m Model) saveConfig() {
+	_ = config.Save(m.cfg, "")
 }
 
 func baseName(p string) string { return filepath.Base(p) }

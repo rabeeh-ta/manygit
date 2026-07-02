@@ -49,8 +49,14 @@ type Model struct {
 	filtering       bool
 	filterPanel     panel // which list `/` filters: panelRepos or panelScripts
 	filterAttention bool  // show only repos with changes / ahead / behind
-	showHelp        bool
-	showGraph       bool // full-screen commit graph overlay
+	showHelp        bool  // the settings + help overlay
+	showGraph       bool  // full-screen commit graph overlay
+
+	// settings overlay (?): a cursor over the editable rows (theme/glyphs/editor)
+	// and an inline text-edit state for the editor (open_cmd) row.
+	settingsCursor int
+	editingOpenCmd bool
+	openCmdBuf     string
 
 	// bottom multi-view slot
 	bottomView bottomView
@@ -113,6 +119,7 @@ func New(cfg config.Config, repos []discover.Repo, scripts []discover.Script) Mo
 	if conc < 1 {
 		conc = 1
 	}
+	applyTheme(themeByName(cfg.Theme)) // set the themeable styles from config
 	return Model{
 		cfg:     cfg,
 		repos:   vms,

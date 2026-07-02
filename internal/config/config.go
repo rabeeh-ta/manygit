@@ -19,11 +19,12 @@ type Config struct {
 	OpenCmd      string   `yaml:"open_cmd"`
 	Prune        []string `yaml:"prune"`         // merged with defaults
 	StatusGlyphs string   `yaml:"status_glyphs"` // "unicode" (↑↓) or "ascii" (+-)
+	Theme        string   `yaml:"theme"`         // color theme name (see the tui theme list)
 }
 
 // Default returns the built-in configuration.
 func Default() Config {
-	return Config{MaxDepth: 3, Concurrency: 8, OpenCmd: "code", StatusGlyphs: "unicode"}
+	return Config{MaxDepth: 3, Concurrency: 8, OpenCmd: "code", StatusGlyphs: "unicode", Theme: "default"}
 }
 
 // UnicodeGlyphs reports whether ahead/behind should use ↑/↓ (true) or the
@@ -78,8 +79,27 @@ func Load(path string) (Config, error) {
 	if file.StatusGlyphs != "" {
 		cfg.StatusGlyphs = file.StatusGlyphs
 	}
+	if file.Theme != "" {
+		cfg.Theme = file.Theme
+	}
 	cfg.Prune = append(cfg.Prune, file.Prune...)
 	return cfg, nil
+}
+
+// Save writes cfg to path (empty = ConfigPath()), creating the directory. Used
+// when the settings screen changes a runtime setting (theme, glyphs, editor).
+func Save(cfg Config, path string) error {
+	if path == "" {
+		path = ConfigPath()
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }
 
 // PruneSet is the default prune set merged with any user-configured names.

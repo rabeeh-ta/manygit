@@ -472,51 +472,85 @@ func (m Model) statusOrFilterLine() string {
 	return m.footer()
 }
 
-// helpView renders a full-screen help overlay: keybindings and the status
-// legend (what ^N / vN / *N / ok mean).
+// helpView renders the full-screen settings + help overlay: editable settings
+// (theme / glyphs / editor) on top, then a two-column keybinding + status
+// reference (two columns so it fits shorter terminals).
 func (m Model) helpView() string {
-	row := func(left, desc string) string {
-		return "  " + lipgloss.NewStyle().Width(14).Render(left) + styleDim.Render(desc)
+	// sRow renders an editable setting: cursor + label + value (the selected
+	// value is wrapped in < > to signal h/l changes it).
+	sRow := func(i int, label, value string) string {
+		cur := "  "
+		val := value
+		if m.settingsCursor == i {
+			cur = styleCursor.Render("> ")
+			if !(i == 2 && m.editingOpenCmd) {
+				val = styleCursor.Render("<") + " " + value + " " + styleCursor.Render(">")
+			}
+		}
+		return cur + lipgloss.NewStyle().Width(9).Render(label) + val
+	}
+	kr := func(key, desc string) string {
+		return "  " + lipgloss.NewStyle().Width(8).Render(key) + styleDim.Render(desc)
+	}
+	glyphs := "unicode (arrows)"
+	if !m.cfg.UnicodeGlyphs() {
+		glyphs = "ascii (+/-)"
+	}
+	editor := m.cfg.OpenCmd
+	if m.editingOpenCmd {
+		editor = m.openCmdBuf + "_"
+	}
+	hint := map[int]string{0: "h/l cycles themes", 1: "h/l toggles arrows/ascii", 2: "enter to edit"}[m.settingsCursor]
+	if m.editingOpenCmd {
+		hint = "type the command, enter saves, esc cancels"
 	}
 	up, down := "+", "-"
 	if m.cfg.UnicodeGlyphs() {
 		up, down = "↑", "↓"
 	}
-	lines := []string{
-		styleTitle.Render("manygit — help"),
+	settings := []string{
+		styleTitle.Render("manygit — settings & help"),
 		"",
+		styleGroup.Render("Settings") + styleDim.Render("  — j/k move, h/l change, saved to config.yml"),
+		sRow(0, "theme", m.cfg.Theme),
+		sRow(1, "glyphs", glyphs),
+		sRow(2, "editor", editor),
+		styleDim.Render("  " + hint),
+		styleDim.Render(fmt.Sprintf("  read-only: depth %d, concurrency %d (restart to change)", m.cfg.MaxDepth, m.cfg.Concurrency)),
+		"",
+	}
+	left := []string{
 		styleGroup.Render("Panels & navigation"),
-		row("1 / 2 / 3", "focus Repos / Scripts / Branches"),
-		row("4 / 5 / 6", "bottom slot: Graph / Changes / Output"),
-		row("tab", "cycle panels"),
-		row("j / k", "move within the FOCUSED panel"),
-		row("space", "Repos → branches · Scripts → run it · else back to Repos"),
-		row("g", "full-screen colored commit graph (j/k scroll · esc closes)"),
-		row("F", "toggle: show only changed / out-of-sync repos"),
-		row("/", "filter the focused list by name (esc clears)"),
+		kr("1/2/3", "focus Repos / Scripts / Branches"),
+		kr("4/5/6", "bottom: Graph / Changes / Output"),
+		kr("tab", "cycle panels"),
+		kr("j/k", "move in the focused panel"),
+		kr("space", "branches / run script / back"),
+		kr("g", "full-screen commit graph"),
+		kr("F", "only changed / unsynced repos"),
+		kr("/", "filter the focused list"),
 		"",
 		styleGroup.Render("Graph (4) & Changes (5)"),
-		row("4  j/k", "select a commit — or WIP (uncommitted) at the top"),
-		row("5", "show the selected entry's changed files"),
-		row("5  enter", "open the highlighted file's diff in-place (esc = back)"),
-		"",
-		styleGroup.Render("Actions") + styleDim.Render("  — apply to the highlighted (>) repo"),
-		row("s", "sync: fetch + pull --ff-only   (dirty repos skipped)"),
-		row("p", "push"),
-		row("f / r", "fetch current repo / refetch all"),
-		row("b / enter", "checkout the selected branch (in the Branches panel)"),
-		row("o", "open the current repo in your editor"),
+		kr("4 j/k", "select a commit (WIP on top)"),
+		kr("5", "the selection's changed files"),
+		kr("5 enter", "open file diff (esc = back)"),
+	}
+	right := []string{
+		styleGroup.Render("Actions") + styleDim.Render(" on the > repo"),
+		kr("s", "sync (fetch + pull --ff-only)"),
+		kr("p", "push"),
+		kr("f/r", "fetch current / refetch all"),
+		kr("b/enter", "checkout selected branch"),
+		kr("o", "open the repo in your editor"),
 		"",
 		styleGroup.Render("Status column"),
-		row(styleGreen.Render("ok"), "up to date with its upstream"),
-		row(styleYellow.Render(up+"N"), "ahead N — you have commits to PUSH"),
-		row(styleCyan.Render(down+"N"), "behind N — commits available to PULL"),
-		row(styleMagenta.Render(up+"N "+down+"M"), "diverged (N ahead, M behind)"),
-		row(styleOrange.Render("*N"), "N files changed (dirty working tree)"),
-		row(styleDim.Render("~ / ."), "fetching / loading"),
-		row(styleRed.Render("!"), "no upstream, or error"),
-		"",
-		styleDim.Render("  ? or esc  close help        q  quit"),
+		kr(styleGreen.Render("ok"), "up to date with upstream"),
+		kr(styleYellow.Render(up+"N"), "ahead — commits to PUSH"),
+		kr(styleCyan.Render(down+"N"), "behind — commits to PULL"),
+		kr(styleMagenta.Render(up+"N"+down+"M"), "diverged"),
+		kr(styleOrange.Render("*N"), "N files changed (dirty)"),
+		kr(styleDim.Render("~ ."), "fetching / loading"),
+		kr(styleRed.Render("!"), "no upstream, or error"),
 	}
 	tw, th := m.width, m.height
 	if tw <= 0 {
@@ -525,7 +559,27 @@ func (m Model) helpView() string {
 	if th <= 0 {
 		th = minTermH
 	}
-	box := panelStyle(tw-2, th-2, true).Render(clampLines(strings.Join(lines, "\n"), th-2))
+	// Clip each column to its width budget (ANSI-aware) so neither can wrap and
+	// break alignment — leftW + rightW == the overlay's inner content width, so
+	// the joined row never exceeds it (which panelStyle would otherwise wrap).
+	// Left content is clipped to leftW-gutter then padded to leftW, so there's
+	// always a gap before the right column even when a left line is truncated.
+	const gutter = 2
+	leftW := (tw - 4) / 2
+	rightW := (tw - 4) - leftW
+	leftBlock := make([]string, len(left))
+	for i, ln := range left {
+		c := lipgloss.NewStyle().MaxWidth(leftW - gutter).Render(ln)
+		leftBlock[i] = c + strings.Repeat(" ", max(0, leftW-lipgloss.Width(c)))
+	}
+	rightBlock := make([]string, len(right))
+	for i, ln := range right {
+		rightBlock[i] = lipgloss.NewStyle().MaxWidth(rightW).Render(ln)
+	}
+	cols := lipgloss.JoinHorizontal(lipgloss.Top, strings.Join(leftBlock, "\n"), strings.Join(rightBlock, "\n"))
+	body := strings.Join(settings, "\n") + "\n" + cols + "\n\n" +
+		styleDim.Render("  j/k move · h/l change · enter edit · ?/esc close · q quit")
+	box := panelStyle(tw-2, th-2, true).Render(clampLines(body, th-2))
 	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
 }
 

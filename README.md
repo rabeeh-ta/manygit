@@ -54,7 +54,7 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 | `f` / `r` | fetch the highlighted repo / refetch all |
 | `b` / `enter` | checkout the selected branch (in the Branches panel; dirty repos skipped) |
 | `o` | open the highlighted repo in `open_cmd` (default `code`) |
-| `?` | help overlay (status legend + keys) |
+| `?` | settings & help overlay — pick a theme, toggle glyphs, set your editor (see below) |
 | `q` | quit |
 
 ## Status column
@@ -106,15 +106,33 @@ in the background (non-interactive) and streams its combined output into the
 **Output** view (`6`), which the bottom slot switches to automatically. The status
 line reports success or the failing exit when it finishes.
 
+## Settings & themes (`?`)
+
+Press `?` for the settings + help overlay. The top section is editable: `j`/`k`
+move between rows, `h`/`l` change the highlighted setting (applied live), and
+`enter` on the editor row lets you type a new command. Changes are saved to
+`~/.config/manygit/config.yml`.
+
+- **theme** — `h`/`l` cycles the color theme (applied instantly).
+- **glyphs** — unicode (`↑↓`) or ascii (`+/-`) ahead/behind markers.
+- **editor** — the command `o` opens a repo with.
+
+Themes recolor the "chrome" (borders, cursor, titles, group headers, dividers)
+and the error color; the status colors (green ok, yellow ahead, cyan behind,
+orange dirty) stay standard so they read the same in every theme. Built-in
+themes — `default` plus `serika_dark`, `dracula`, `nord`, `catppuccin`, `8008`,
+their palettes adapted from [monkeytype](https://github.com/monkeytypegame/monkeytype).
+
 ## Config (optional)
 
-`~/.config/manygit/config.yml`:
+`~/.config/manygit/config.yml` (also written by the settings screen):
 
 ```yaml
 max_depth: 3
 concurrency: 8
 open_cmd: code
 status_glyphs: unicode   # ahead/behind arrows; use "ascii" for +N / -N if they misalign
+theme: default           # default | serika_dark | dracula | nord | catppuccin | 8008
 prune:
   - node_modules
   - vendor
