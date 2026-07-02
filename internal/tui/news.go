@@ -14,7 +14,7 @@ import (
 
 const (
 	newsCommitsPerRepo = 5
-	newsRotate         = 5 * time.Second // top-bar headline rotation interval
+	newsRotate         = 12 * time.Second // top-bar headline dwell time (slow enough to read)
 )
 
 // newsRepo is the minimal per-repo info the news refresh needs (captured up
