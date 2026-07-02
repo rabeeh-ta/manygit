@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"manygit/internal/config"
+	"manygit/internal/harness"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -416,13 +417,6 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, m.loadContextCmd()
 }
 
-// The settings overlay is a flat radio-list: one row per theme, then the two
-// glyph options, then the editor row. These index into that list.
-func (m Model) glyphUnicodeIdx() int   { return len(themeList) }
-func (m Model) glyphAsciiIdx() int     { return len(themeList) + 1 }
-func (m Model) editorIdx() int         { return len(themeList) + 2 }
-func (m Model) settingsItemCount() int { return len(themeList) + 3 }
-
 // handleSettingsKey drives the settings/help overlay: j/k move through the
 // radio-list (a theme row previews live), enter selects the highlighted row
 // (editor row → inline edit), tab/? flips to the keybindings reference, esc
@@ -455,12 +449,12 @@ func (m Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = false
 	case "down", "j":
 		if !m.showKeys {
-			m.settingsCursor = clampInt(m.settingsCursor+1, 0, m.settingsItemCount()-1)
+			m.settingsCursor = clampInt(m.settingsCursor+1, 0, settingsItemCount()-1)
 			m.previewSettings()
 		}
 	case "up", "k":
 		if !m.showKeys {
-			m.settingsCursor = clampInt(m.settingsCursor-1, 0, m.settingsItemCount()-1)
+			m.settingsCursor = clampInt(m.settingsCursor-1, 0, settingsItemCount()-1)
 			m.previewSettings()
 		}
 	case "enter", " ":
@@ -474,28 +468,32 @@ func (m Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // previewSettings applies the theme under the cursor live (or the committed
 // theme when the cursor is off the theme rows), without persisting.
 func (m *Model) previewSettings() {
-	if m.settingsCursor < len(themeList) {
-		applyTheme(themeList[m.settingsCursor])
+	if r := settingRows()[m.settingsCursor]; r.kind == skTheme {
+		applyTheme(themeByName(r.val))
 	} else {
 		applyTheme(themeByName(m.cfg.Theme))
 	}
 }
 
-// settingsSelect commits the highlighted radio row: a theme (persisted), a glyph
-// mode (persisted), or the editor row (opens the inline text edit).
+// settingsSelect commits the highlighted radio row: a theme or glyph mode or
+// harness (persisted), or the editor row (opens the inline text edit). Selecting
+// a harness that isn't installed is a no-op.
 func (m *Model) settingsSelect() {
-	switch c := m.settingsCursor; {
-	case c < len(themeList):
-		m.cfg.Theme = themeList[c].Name
-		applyTheme(themeList[c])
+	r := settingRows()[m.settingsCursor]
+	switch r.kind {
+	case skTheme:
+		m.cfg.Theme = r.val
+		applyTheme(themeByName(r.val))
 		m.saveConfig()
-	case c == m.glyphUnicodeIdx():
-		m.cfg.StatusGlyphs = "unicode"
+	case skHarness:
+		if harness.Available(r.val) {
+			m.cfg.Harness = r.val
+			m.saveConfig()
+		}
+	case skGlyph:
+		m.cfg.StatusGlyphs = r.val
 		m.saveConfig()
-	case c == m.glyphAsciiIdx():
-		m.cfg.StatusGlyphs = "ascii"
-		m.saveConfig()
-	case c == m.editorIdx():
+	case skEditor:
 		m.editingOpenCmd = true
 		m.openCmdBuf = m.cfg.OpenCmd
 	}

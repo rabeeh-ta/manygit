@@ -116,6 +116,9 @@ Press `?` for the Settings screen — a radio list you drive with `j`/`k` and
 
 - **theme** — every theme is its own row; moving the cursor onto one **previews
   it live**, `enter` selects it. `esc` without selecting reverts to the current one.
+- **AI harness** — pick the AI CLI used by the AI features (`claude` / `codex`);
+  uninstalled ones are grayed and can't be selected. The active harness also
+  shows in the bottom bar. manygit shells out to the CLI (its own auth, no keys).
 - **glyphs** — pick unicode (`↑↓`) or ascii (`+/-`) ahead/behind markers.
 - **editor** — `enter` opens an inline field to type the command `o` opens a repo with.
 

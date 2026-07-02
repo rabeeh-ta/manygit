@@ -7,6 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"manygit/internal/harness"
 )
 
 // TestMain points XDG_CONFIG_HOME at a throwaway dir for the whole package so no
@@ -105,7 +107,7 @@ func TestTUI_SettingsScreen(t *testing.T) {
 	}
 
 	// select the ascii glyph row
-	m.settingsCursor = m.glyphAsciiIdx()
+	m.settingsCursor = settingRowIndex(skGlyph, "ascii")
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mm.(Model)
 	if m.cfg.StatusGlyphs != "ascii" {
@@ -113,7 +115,7 @@ func TestTUI_SettingsScreen(t *testing.T) {
 	}
 
 	// editor row: enter -> edit, clear "code", type "vim", enter -> saved
-	m.settingsCursor = m.editorIdx()
+	m.settingsCursor = settingRowIndex(skEditor, "")
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mm.(Model)
 	if !m.editingOpenCmd {
@@ -151,6 +153,41 @@ func TestTUI_SettingsScreen(t *testing.T) {
 	}
 }
 
+// The harness setting: the bottom bar shows the active harness; the settings
+// screen lists each harness; selecting an installed one sets it while an
+// uninstalled one is a no-op.
+func TestTUI_HarnessSettingAndBar(t *testing.T) {
+	t.Cleanup(func() { applyTheme(themeByName("default")) })
+	cfg, repos := twoRepos(t)
+	cfg.Harness = "claude"
+	m := loadAll(t, New(cfg, repos, nil), 120, 30)
+
+	if v := stripANSI(m.View()); !strings.Contains(v, "harness: claude") {
+		t.Errorf("bottom bar should show the active harness; view:\n%s", v)
+	}
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = mm.(Model)
+	sv := stripANSI(m.View())
+	for _, want := range []string{"AI harness", "claude", "codex"} {
+		if !strings.Contains(sv, want) {
+			t.Errorf("settings should list %q", want)
+		}
+	}
+	for _, h := range harness.All {
+		m.settingsCursor = settingRowIndex(skHarness, h.Name)
+		before := m.cfg.Harness
+		mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = mm.(Model)
+		if h.Installed() {
+			if m.cfg.Harness != h.Name {
+				t.Errorf("selecting installed harness %q should set it, got %q", h.Name, m.cfg.Harness)
+			}
+		} else if m.cfg.Harness != before {
+			t.Errorf("selecting uninstalled harness %q should be a no-op, got %q", h.Name, m.cfg.Harness)
+		}
+	}
+}
+
 // Moving onto a theme previews it; closing with esc without selecting reverts to
 // the committed theme.
 func TestTUI_SettingsPreviewRevert(t *testing.T) {
@@ -177,7 +214,7 @@ func TestTUI_SettingsEditCancel(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 100, 30)
 	m.showHelp = true
-	m.settingsCursor = m.editorIdx()
+	m.settingsCursor = settingRowIndex(skEditor, "")
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mm.(Model)
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})

@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"manygit/internal/git"
+	"manygit/internal/harness"
 )
 
 // decoRefRe matches one colored token — <set-color><text><reset> — as emitted by
@@ -516,58 +517,94 @@ func (m Model) overlayBox(body string) string {
 	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
 }
 
-// settingsBody is the Settings radio-list: one row per theme (previewed live as
-// the cursor lands), the two glyph options, and the editor. The selected value
-// in each group is marked (*), the cursor row is highlighted.
+// settingsBody is the Settings radio-list: a group per setting (theme, AI
+// harness, glyphs, editor), each option its own row. The cursor row is
+// highlighted, the selected value in each group is marked (*), and a theme row
+// previews live as the cursor lands on it. Uninstalled harnesses are grayed.
 func (m Model) settingsBody() string {
-	radio := func(idx int, label string, selected bool) string {
+	radioMark := func(selected bool) string {
+		if selected {
+			return styleGreen.Render("(*) ")
+		}
+		return "( ) "
+	}
+	// line renders "> (mark) label", accent when it's the cursor row.
+	line := func(cursor bool, mark, label string) string {
 		cur := "  "
 		lbl := styleDim.Render(label)
-		if m.settingsCursor == idx {
+		if cursor {
 			cur = styleCursor.Render("> ")
 			lbl = styleCursor.Render(label)
 		}
-		mark := "( ) "
-		if selected {
-			mark = styleGreen.Render("(*) ")
-		}
 		return "   " + cur + mark + lbl
 	}
-	lines := []string{
-		styleTitle.Render("manygit — settings"),
-		"",
-		styleGroup.Render("Theme") + styleDim.Render("   (previews live as you move)"),
+	hdr := func(kind settingKind) string {
+		switch kind {
+		case skTheme:
+			return styleGroup.Render("Theme") + styleDim.Render("   (previews live)")
+		case skHarness:
+			return styleGroup.Render("AI harness") + styleDim.Render("   (grayed = not installed)")
+		case skGlyph:
+			return styleGroup.Render("Ahead / behind glyphs")
+		default:
+			return styleGroup.Render("Editor") + styleDim.Render("   (opens a repo with `o`)")
+		}
 	}
-	for i, th := range themeList {
-		lines = append(lines, radio(i, th.Name, m.cfg.Theme == th.Name))
+
+	lines := []string{styleTitle.Render("manygit — settings"), ""}
+	prev := settingKind(-1)
+	for i, r := range settingRows() {
+		if r.kind != prev {
+			lines = append(lines, hdr(r.kind))
+			prev = r.kind
+		}
+		cursor := m.settingsCursor == i
+		switch r.kind {
+		case skTheme:
+			lines = append(lines, line(cursor, radioMark(m.cfg.Theme == r.val), r.val))
+		case skHarness:
+			installed := harness.Available(r.val)
+			label := r.val
+			mark := radioMark(installed && m.cfg.Harness == r.val)
+			if !installed {
+				label += "  (not installed)"
+			}
+			// grayed harnesses stay dim even under the cursor
+			cur := "  "
+			if cursor {
+				cur = styleCursor.Render("> ")
+			}
+			lbl := styleDim.Render(label)
+			if cursor && installed {
+				lbl = styleCursor.Render(label)
+			}
+			lines = append(lines, "   "+cur+mark+lbl)
+		case skGlyph:
+			label := "unicode  (arrows)"
+			if r.val == "ascii" {
+				label = "ascii    (+ / -)"
+			}
+			sel := (r.val == "unicode") == m.cfg.UnicodeGlyphs()
+			lines = append(lines, line(cursor, radioMark(sel), label))
+		case skEditor:
+			val := m.cfg.OpenCmd
+			hint := ""
+			if m.editingOpenCmd {
+				val = m.openCmdBuf + "_"
+				hint = "   enter saves · esc cancels"
+			} else if cursor {
+				hint = "   enter to edit"
+			}
+			ecur := "  "
+			eval := styleDim.Render(val)
+			if cursor {
+				ecur = styleCursor.Render("> ")
+				eval = styleCursor.Render(val)
+			}
+			lines = append(lines, "   "+ecur+eval+styleDim.Render(hint))
+		}
 	}
-	lines = append(lines,
-		"",
-		styleGroup.Render("Ahead / behind glyphs"),
-		radio(m.glyphUnicodeIdx(), "unicode  (arrows)", m.cfg.UnicodeGlyphs()),
-		radio(m.glyphAsciiIdx(), "ascii    (+ / -)", !m.cfg.UnicodeGlyphs()),
-		"",
-		styleGroup.Render("Editor")+styleDim.Render("   (the command `o` opens a repo with)"),
-	)
-	editorVal := m.cfg.OpenCmd
-	editorHint := ""
-	if m.editingOpenCmd {
-		editorVal = m.openCmdBuf + "_"
-		editorHint = styleDim.Render("   enter saves · esc cancels")
-	} else if m.settingsCursor == m.editorIdx() {
-		editorHint = styleDim.Render("   enter to edit")
-	}
-	ecur := "  "
-	eval := styleDim.Render(editorVal)
-	if m.settingsCursor == m.editorIdx() {
-		ecur = styleCursor.Render("> ")
-		eval = styleCursor.Render(editorVal)
-	}
-	lines = append(lines,
-		"   "+ecur+eval+editorHint,
-		styleDim.Render(fmt.Sprintf("   read-only (config.yml, needs restart): max_depth %d · concurrency %d", m.cfg.MaxDepth, m.cfg.Concurrency)),
-		styleDim.Render("   j/k move · enter select · tab keybindings · esc close"),
-	)
+	lines = append(lines, styleDim.Render("   j/k move · enter select · tab keybindings · esc close"))
 	return strings.Join(lines, "\n")
 }
 
@@ -725,12 +762,41 @@ func (m Model) View() string {
 		clampLines(m.renderBottom(d.rightW-2, botInner), botInner))
 	right := lipgloss.JoinVertical(lipgloss.Left, branches, bottom)
 
-	cols := lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gutter), right)
-	view := lipgloss.JoinVertical(lipgloss.Left, title, "", cols, m.statusOrFilterLine())
-
 	tw := m.width
 	if tw <= 0 {
 		tw = minTermW
 	}
+	cols := lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gutter), right)
+	view := lipgloss.JoinVertical(lipgloss.Left, title, "", cols, m.bottomBar(tw))
 	return lipgloss.NewStyle().MaxWidth(tw).Render(view)
+}
+
+// bottomBar is the footer line: the status/filter/key-hints on the left and the
+// active AI harness on the right. The harness is always shown; the left side is
+// clipped to make room for it.
+func (m Model) bottomBar(width int) string {
+	right := m.harnessIndicator()
+	rw := lipgloss.Width(right)
+	if rw+1 >= width {
+		return right // extremely narrow: just the harness
+	}
+	left := lipgloss.NewStyle().MaxWidth(width - rw - 1).Render(m.statusOrFilterLine())
+	gap := width - lipgloss.Width(left) - rw
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + right
+}
+
+// harnessIndicator shows the active AI harness (dim/`no harness` if none is
+// selected or the selected one isn't installed).
+func (m Model) harnessIndicator() string {
+	if m.cfg.Harness == "" {
+		return styleDim.Render("no AI harness")
+	}
+	label := "harness: " + m.cfg.Harness
+	if harness.Available(m.cfg.Harness) {
+		return styleGroup.Render(label)
+	}
+	return styleDim.Render(label + " (n/a)")
 }

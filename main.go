@@ -9,6 +9,7 @@ import (
 
 	"manygit/internal/config"
 	"manygit/internal/discover"
+	"manygit/internal/harness"
 	"manygit/internal/tui"
 )
 
@@ -28,6 +29,10 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "config:", err)
 		os.Exit(1)
+	}
+
+	if cfg.Harness == "" {
+		cfg.Harness = harness.FirstInstalled() // "" if neither claude nor codex is on PATH
 	}
 
 	scanRoot := resolveRoot(*root, cfg.Root)

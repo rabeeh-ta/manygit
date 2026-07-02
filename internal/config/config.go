@@ -20,6 +20,7 @@ type Config struct {
 	Prune        []string `yaml:"prune"`         // merged with defaults
 	StatusGlyphs string   `yaml:"status_glyphs"` // "unicode" (↑↓) or "ascii" (+-)
 	Theme        string   `yaml:"theme"`         // color theme name (see the tui theme list)
+	Harness      string   `yaml:"harness"`       // AI harness: "claude" or "codex" (see internal/harness)
 }
 
 // Default returns the built-in configuration.
@@ -81,6 +82,9 @@ func Load(path string) (Config, error) {
 	}
 	if file.Theme != "" {
 		cfg.Theme = file.Theme
+	}
+	if file.Harness != "" {
+		cfg.Harness = file.Harness
 	}
 	cfg.Prune = append(cfg.Prune, file.Prune...)
 	return cfg, nil
