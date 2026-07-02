@@ -271,6 +271,29 @@ func (m Model) renderBranches(contentW, innerH int) string {
 	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
 }
 
+// bottomTabs is the tab-bar label for the multi-view bottom slot: the three
+// views with the active one bracketed (and a "*" on Output while a script runs),
+// so the inactive views are discoverable from the panel title.
+func (m Model) bottomTabs() string {
+	views := []struct {
+		n    int
+		name string
+	}{{4, "Graph"}, {5, "Changes"}, {6, "Output"}}
+	tabs := make([]string, len(views))
+	for i, v := range views {
+		name := v.name
+		if v.n == 6 && m.outputRunning {
+			name += "*"
+		}
+		label := fmt.Sprintf("%d %s", v.n, name)
+		if i == int(m.bottomView) {
+			label = "[" + label + "]"
+		}
+		tabs[i] = label
+	}
+	return strings.Join(tabs, " ")
+}
+
 // renderBottom renders the active view of the multi-view bottom slot.
 func (m Model) renderBottom(contentW, innerH int) string {
 	switch m.bottomView {
@@ -552,21 +575,9 @@ func (m Model) View() string {
 	botInner := max((d.bodyH-2)-topInner, 3)
 	branches := titledPanel(3, "Branches", d.rightW, topInner, m.focus == panelBranches,
 		clampLines(m.renderBranches(d.rightW-2, topInner), topInner))
-	// bottom multi-view slot: 4 Graph / 5 Changes / 6 Output
-	bnum, btitle := 4, "Graph"
-	switch m.bottomView {
-	case bvChanges:
-		bnum, btitle = 5, "Changes"
-	case bvOutput:
-		bnum, btitle = 6, "Output"
-		if m.outputTitle != "" {
-			btitle = "Output: " + m.outputTitle
-			if m.outputRunning {
-				btitle += " (running)"
-			}
-		}
-	}
-	bottom := titledPanel(bnum, btitle, d.rightW, botInner, m.focus == panelBottom,
+	// bottom multi-view slot: a tab bar of all three views (active bracketed) so
+	// the 5 Changes / 6 Output views are discoverable, not just the current one.
+	bottom := titledBox(m.bottomTabs(), d.rightW, botInner, m.focus == panelBottom,
 		clampLines(m.renderBottom(d.rightW-2, botInner), botInner))
 	right := lipgloss.JoinVertical(lipgloss.Left, branches, bottom)
 

@@ -574,16 +574,34 @@ func TestTUI_DecorativeGlyphsAreASCII(t *testing.T) {
 	}
 }
 
-// The four panels must display their number so the 1/2/3/4 focus keys are
-// discoverable.
+// The panels must display their number so the focus keys are discoverable, and
+// the bottom slot shows all three of its views (4/5/6) as a tab bar.
 func TestTUI_PanelsShowNumbers(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 120, 40)
 	view := stripANSI(m.View())
-	for _, want := range []string{"[1] Repos", "[2] Scripts", "[3] Branches", "[4] Graph"} {
+	for _, want := range []string{"[1] Repos", "[2] Scripts", "[3] Branches", "[4 Graph]", "5 Changes", "6 Output"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("View missing panel label %q", want)
 		}
+	}
+}
+
+// The bottom tab bar brackets the active view and marks Output with "*" while a
+// script is running, so all three views are always advertised.
+func TestTUI_BottomTabBar(t *testing.T) {
+	var m Model
+	if got := m.bottomTabs(); got != "[4 Graph] 5 Changes 6 Output" {
+		t.Errorf("graph active: %q", got)
+	}
+	m.bottomView = bvChanges
+	if got := m.bottomTabs(); got != "4 Graph [5 Changes] 6 Output" {
+		t.Errorf("changes active: %q", got)
+	}
+	m.bottomView = bvOutput
+	m.outputRunning = true
+	if got := m.bottomTabs(); got != "4 Graph 5 Changes [6 Output*]" {
+		t.Errorf("output active+running: %q", got)
 	}
 }
 

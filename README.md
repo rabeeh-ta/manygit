@@ -75,7 +75,10 @@ if your terminal renders them two cells wide, the column drifts; set
 
 ## Bottom panel (Graph / Changes / Output)
 
-The bottom-right slot is a multi-view panel switched with number keys:
+The bottom-right slot is a multi-view panel switched with number keys. Its title
+is a tab bar — `[4 Graph] 5 Changes 6 Output` — with the active view bracketed
+(and a `*` on Output while a script is running), so all three views are always
+advertised:
 
 - **`4` Graph** — the colored `git log --graph` with a selection cursor. The top
   entry is `WIP (uncommitted changes)`; below it are commits. `j`/`k` move the

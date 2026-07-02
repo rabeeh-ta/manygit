@@ -105,8 +105,8 @@ func TestTUI_SpaceRunsScriptIntoOutput(t *testing.T) {
 	if v := stripANSI(m.View()); !strings.Contains(v, "three") {
 		t.Error("Output view should render the streamed lines")
 	}
-	if v := stripANSI(m.View()); !strings.Contains(v, "Output: a.sh (running)") {
-		t.Error("bottom panel title should show the running script")
+	if v := stripANSI(m.View()); !strings.Contains(v, "[6 Output*]") {
+		t.Error("bottom tab bar should mark Output active with a running marker")
 	}
 
 	// a line from a superseded (stale) run must be ignored
