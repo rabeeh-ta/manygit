@@ -70,7 +70,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case graphMsg:
 		if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == msg.path {
-			m.graphLines = msg.lines
+			m.graphLines = make([]string, len(msg.lines))
+			for i, ln := range msg.lines {
+				m.graphLines[i] = shortenGraphRefs(ln) // cap long ref names in decorations
+			}
 			m.graphCommits = msg.commits
 			m.graphSel = 0
 			m.graphOffset = 0
@@ -152,10 +155,11 @@ func (m Model) loadChangesCmd() tea.Cmd {
 // runScriptCmd starts the highlighted script in the background, streaming its
 // combined output into the Output view (6). nil if no script is selected.
 func (m Model) runScriptCmd() tea.Cmd {
-	if m.scriptCursor < 0 || m.scriptCursor >= len(m.scripts) {
+	vs := m.visibleScripts()
+	if m.scriptCursor < 0 || m.scriptCursor >= len(vs) {
 		return nil
 	}
-	return startScriptCmd(m.scripts[m.scriptCursor].Path, m.outputRun)
+	return startScriptCmd(vs[m.scriptCursor].Path, m.outputRun)
 }
 
 // appendOutput adds a line to the Output view, keeping the view pinned to the
@@ -239,7 +243,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.branchCursor++
 			}
 		case panelScripts:
-			if m.scriptCursor < len(m.scripts)-1 {
+			if m.scriptCursor < len(m.visibleScripts())-1 {
 				m.scriptCursor++
 			}
 		case panelBottom:
@@ -300,12 +304,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		switch m.focus {
 		case panelScripts:
-			if m.scriptCursor < 0 || m.scriptCursor >= len(m.scripts) {
+			vs := m.visibleScripts()
+			if m.scriptCursor < 0 || m.scriptCursor >= len(vs) {
 				return m, nil
 			}
 			// Run in the background and surface its live output in view 6.
 			m.outputRun++ // supersede any still-streaming previous run
-			m.outputTitle = m.scripts[m.scriptCursor].Name
+			m.outputTitle = vs[m.scriptCursor].Name
 			m.outputLines = nil
 			m.outputOffset = 0
 			m.outputRunning = true
@@ -326,6 +331,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.loadContextCmd()
 	case "/":
 		m.filtering = true
+		m.filter = ""
+		if m.focus == panelScripts {
+			m.filterPanel = panelScripts
+			m.scriptCursor = 0
+		} else {
+			m.filterPanel = panelRepos
+			m.cursor = 0
+		}
 	case "f":
 		if r := m.currentVisible(vis); r != nil && !r.fetching {
 			r.fetching = true
@@ -376,18 +389,20 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEsc:
 		m.filtering = false
 		m.filter = ""
-		m.cursor = 0
 	case tea.KeyEnter:
 		m.filtering = false
 	case tea.KeyBackspace:
 		if len(m.filter) > 0 {
 			m.filter = m.filter[:len(m.filter)-1]
 		}
-		m.cursor = 0
 	case tea.KeyRunes:
 		m.filter += string(msg.Runes)
-		m.cursor = 0
 	}
+	if m.filterPanel == panelScripts {
+		m.scriptCursor = 0
+		return m, nil
+	}
+	m.cursor = 0
 	return m, m.loadContextCmd()
 }
 

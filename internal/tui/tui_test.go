@@ -190,6 +190,60 @@ func TestTUI_ScriptsPanel(t *testing.T) {
 	}
 }
 
+// `/` in the Scripts panel filters the scripts list (not the repos list); the
+// cursor and run target the filtered view.
+func TestTUI_SlashFiltersScripts(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	scripts := []discover.Script{
+		{Path: "/x/sync-edx.sh", Name: "sync-edx.sh"},
+		{Path: "/x/sync-mfe.sh", Name: "sync-mfe.sh"},
+		{Path: "/x/deploy.sh", Name: "deploy.sh"},
+	}
+	m := loadAll(t, New(cfg, repos, scripts), 100, 30)
+	m.focus = panelScripts
+
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = mm.(Model)
+	if m.filterPanel != panelScripts {
+		t.Fatalf("`/` in Scripts should target the scripts list, got %d", m.filterPanel)
+	}
+	for _, r := range "sync" {
+		mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = mm.(Model)
+	}
+	if len(m.visibleScripts()) != 2 {
+		t.Fatalf("filtering scripts to \"sync\" -> %d, want 2", len(m.visibleScripts()))
+	}
+	if len(m.visibleRepos()) != len(repos) {
+		t.Error("a scripts-scoped filter must not narrow the repos list")
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // commit filter
+	m = mm.(Model)
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
+	m = mm.(Model)
+	if m.outputTitle != "sync-edx.sh" {
+		t.Errorf("space should run the highlighted filtered script, got %q", m.outputTitle)
+	}
+}
+
+// Long ref names in the graph decorations are shortened when the graph loads,
+// leaving the commit subject intact.
+func TestTUI_GraphRefsShortened(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	path := m.currentVisible(m.visibleRepos()).repo.Path
+	long := "* \x1b[1;32m" + strings.Repeat("z", 40) + "\x1b[m short: subject"
+	mm, _ := m.Update(graphMsg{path: path, lines: []string{long}})
+	m = mm.(Model)
+	plain := stripANSI(m.graphLines[0])
+	if strings.Contains(plain, strings.Repeat("z", 40)) {
+		t.Errorf("long ref should be shortened in the stored graph line: %q", plain)
+	}
+	if !strings.Contains(plain, "subject") {
+		t.Errorf("commit subject should survive shortening: %q", plain)
+	}
+}
+
 // titledBox must keep the top border aligned even when the label contains
 // non-ASCII characters (e.g. an accented repo name in the graph title).
 func TestTUI_TitledBoxNonASCIILabel(t *testing.T) {
@@ -204,8 +258,8 @@ func TestTUI_TitledBoxNonASCIILabel(t *testing.T) {
 	}
 }
 
-// Long branch names are capped to branchNameMax (15) display chars in the panel.
-func TestTUI_BranchNamesTruncated(t *testing.T) {
+// Branch names are shown in full in the panel (the panel has ample width).
+func TestTUI_BranchNamesShownInFull(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 120, 40)
 	m.focus = panelBranches
@@ -213,15 +267,12 @@ func TestTUI_BranchNamesTruncated(t *testing.T) {
 		{Name: "PROJ-1234-implement-the-new-onboarding-flow"},
 		{Name: "master", IsCurrent: true},
 	}
-	out := stripANSI(m.renderBranches(80))
-	if strings.Contains(out, "PROJ-1234-implement-the-new-onboarding-flow") {
-		t.Error("long branch name should be truncated")
+	out := stripANSI(m.renderBranches(80, 10))
+	if !strings.Contains(out, "PROJ-1234-implement-the-new-onboarding-flow") {
+		t.Errorf("long branch name should be shown in full, got:\n%s", out)
 	}
-	if !strings.Contains(out, "PROJ-1234-imp..") { // 13 chars + ".."
-		t.Errorf("expected truncated 'PROJ-1234-imp..', got:\n%s", out)
-	}
-	if !strings.Contains(out, "master") { // short name unchanged
-		t.Error("short branch name should be shown in full")
+	if !strings.Contains(out, "master") {
+		t.Error("current branch should be shown")
 	}
 }
 
@@ -500,7 +551,7 @@ func TestTUI_PanelLinesFitContentWidth(t *testing.T) {
 	m.changeFiles = []git.FileChange{{Status: "M", Path: strings.Repeat("p", 300)}}
 	content := computeDims(100, 30).rightW - 2
 	blocks := []string{
-		m.renderBranches(content),
+		m.renderBranches(content, 10),
 		m.renderGraphView(content, 10),
 		m.renderChangesView(content, 10),
 	}

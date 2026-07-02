@@ -106,6 +106,34 @@ func TestScripts_ShallowAndPruned(t *testing.T) {
 	}
 }
 
+func TestScripts_IncludesExtensionlessExecutables(t *testing.T) {
+	root := t.TempDir()
+	writeMode := func(mode os.FileMode, body string, parts ...string) {
+		p := filepath.Join(append([]string{root}, parts...)...)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeMode(0o755, "#!/bin/bash\n", "scripts", "sync-all") // extensionless exec + shebang -> included
+	writeMode(0o755, "#!/bin/sh\n", "scripts", "sync.sh")    // .sh -> included
+	writeMode(0o755, "just text\n", "scripts", "README")     // exec, no shebang -> excluded
+	writeMode(0o644, "#!/bin/bash\n", "scripts", "noexec")   // shebang but not exec -> excluded
+	writeMode(0o755, "#!/bin/bash\n", "scripts", "gen.py")   // has extension -> excluded
+
+	var names []string
+	for _, s := range Scripts(root, 2, DefaultPrune()) {
+		names = append(names, s.Name)
+	}
+	sort.Strings(names)
+	want := []string{filepath.Join("scripts", "sync-all"), filepath.Join("scripts", "sync.sh")}
+	if !eq(names, want) {
+		t.Errorf("Scripts = %v, want %v", names, want)
+	}
+}
+
 func TestDiscover_GroupsByParent(t *testing.T) {
 	root := t.TempDir()
 	mkGitRepo(t, filepath.Join(root, "edx-dev", "blendxapi"))

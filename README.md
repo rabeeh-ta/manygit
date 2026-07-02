@@ -44,7 +44,7 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 | `enter` | Changes view: open the highlighted file's diff in-place (`esc` = back) |
 | `g` | full-screen colored commit graph (`j`/`k` scroll, `esc`/`g` close) |
 | `F` | toggle: show only repos with changes / ahead / behind |
-| `/` | filter repos by name; `esc` clears |
+| `/` | filter the focused list by name — repos or scripts (whichever pane is focused); `esc` clears |
 | `s` | sync the highlighted repo (fetch + `pull --ff-only`; dirty repos skipped) |
 | `p` | push the highlighted repo (`git push`) |
 | `f` / `r` | fetch the highlighted repo / refetch all |
@@ -76,7 +76,8 @@ The bottom-right slot is a multi-view panel switched with number keys:
 - **`4` Graph** — the colored `git log --graph` with a selection cursor. The top
   entry is `WIP (uncommitted changes)`; below it are commits. `j`/`k` move the
   cursor between commits (connector lines are skipped). The selected entry drives
-  the Changes view.
+  the Changes view. Long branch names in the ref decorations are shortened so they
+  don't push the commit subject off-screen (the Branches panel shows them in full).
 - **`5` Changes** — the changed files of the selected graph entry: the working
   tree (when WIP is selected) or a commit's files. `j`/`k` pick a file; `enter`
   opens its colored diff in-place; `esc` returns to the list.
@@ -88,13 +89,15 @@ The bottom-right slot is a multi-view panel switched with number keys:
 
 ## Scripts panel
 
-The `[2] Scripts` panel (below Repos) lists `*.sh` files found near the root —
+The `[2] Scripts` panel (below Repos) lists shell scripts found near the root —
 root-level and one directory deep (e.g. `scripts/*.sh`), pruning
-`node_modules`/`.git`/etc. Focus it with `2`, move with `j`/`k`, and press
-`space` to **run** the highlighted script: manygit runs it with `bash` in the
-background (non-interactive) and streams its combined output into the **Output**
-view (`6`), which the bottom slot switches to automatically. The status line
-reports success or the failing exit when it finishes.
+`node_modules`/`.git`/etc. Both `*.sh` files and extensionless executables with a
+`#!` shebang (e.g. `scripts/sync-all`) are listed. The list scrolls to keep the
+cursor visible, and `/` filters it by name. Focus it with `2`, move with `j`/`k`,
+and press `space` to **run** the highlighted script: manygit runs it with `bash`
+in the background (non-interactive) and streams its combined output into the
+**Output** view (`6`), which the bottom slot switches to automatically. The status
+line reports success or the failing exit when it finishes.
 
 ## Config (optional)
 

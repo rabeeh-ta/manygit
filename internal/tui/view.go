@@ -2,12 +2,36 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"manygit/internal/git"
 )
+
+// decoRefRe matches one colored token — <set-color><text><reset> — as emitted by
+// `git log --decorate --color=always` (reset is `\x1b[m`, or `\x1b[0m` on some
+// gits). graphRefMax caps the text length. This also matches the colored short
+// hash, but that's well under the cap (--oneline always abbreviates), so only
+// long ref names are ever shortened.
+var decoRefRe = regexp.MustCompile(`(\x1b\[[0-9;]*m)([^\x1b]+)(\x1b\[0?m)`)
+
+const graphRefMax = 15
+
+// shortenGraphRefs caps long ref names inside a colored graph line's decorations
+// so a long branch name can't push the commit subject off-screen. Short tokens and
+// the uncolored commit subject are left untouched.
+func shortenGraphRefs(line string) string {
+	return decoRefRe.ReplaceAllStringFunc(line, func(tok string) string {
+		g := decoRefRe.FindStringSubmatch(tok)
+		text := []rune(g[2])
+		if len(text) <= graphRefMax {
+			return tok
+		}
+		return g[1] + string(text[:graphRefMax-2]) + ".." + g[3]
+	})
+}
 
 // titledPanel wraps content in a rounded-border panel whose TOP border embeds a
 // lazygit-style "[N] Title", e.g. ╭─[1] Repos────────╮.
@@ -107,10 +131,13 @@ func clampLines(s string, maxLines int) string {
 // visibleRepos returns repos matching the active filters: the name filter (`/`)
 // and/or the "needs attention" filter (`F`). Both compose (AND).
 func (m Model) visibleRepos() []*repoVM {
-	if m.filter == "" && !m.filterAttention {
+	needle := ""
+	if m.filterPanel == panelRepos {
+		needle = strings.ToLower(m.filter)
+	}
+	if needle == "" && !m.filterAttention {
 		return m.repos
 	}
-	needle := strings.ToLower(m.filter)
 	var out []*repoVM
 	for _, r := range m.repos {
 		if needle != "" && !strings.Contains(strings.ToLower(r.repo.Name), needle) {
@@ -157,8 +184,8 @@ func (m Model) renderRow(idx int, r *repoVM, nameW int) string {
 	nameCell := nameStyle.Render(truncate(r.repo.Name, nameW))
 	dirtyCell := lipgloss.NewStyle().Width(wDirty).Render(dirtyBadge(r.status))
 	statusCell := lipgloss.NewStyle().Width(wStatus).Render(syncGlyph(r, m.cfg.UnicodeGlyphs()))
-	// Two spaces after the cursor keep the column budget (computeDims) unchanged
-	// now that the selection marker is gone.
+	// Two spaces after the cursor fill the mark + gutter columns computeDims
+	// budgets for, keeping the name/dirty/status columns aligned.
 	return cursor + "  " + nameCell + " " + dirtyCell + " " + statusCell
 }
 
@@ -175,18 +202,16 @@ func (m Model) renderRepoBody(d dims) string {
 	return b.String()
 }
 
-func (m Model) renderBranches(contentW int) string {
+func (m Model) renderBranches(contentW, innerH int) string {
+	start, end := window(len(m.branches), m.branchCursor, innerH)
 	var b strings.Builder
-	for i, br := range m.branches {
+	for i := start; i < end; i++ {
+		br := m.branches[i]
 		cursor := "  "
 		if m.focus == panelBranches && i == m.branchCursor {
 			cursor = styleCursor.Render("> ")
 		}
-		// Cap the display name — many branches are long Jira-generated names.
 		name := br.Name
-		if r := []rune(name); len(r) > branchNameMax {
-			name = string(r[:branchNameMax-2]) + ".."
-		}
 		if br.IsRemote {
 			name = styleDim.Render(name)
 		}
@@ -195,8 +220,7 @@ func (m Model) renderBranches(contentW int) string {
 		}
 		b.WriteString(cursor + name + "\n")
 	}
-	// Truncate each line to the panel content width so long branch names don't
-	// wrap and misalign the panel (MaxWidth is ANSI-aware).
+	// MaxWidth (ANSI-aware) clips long names to the panel width so they can't wrap.
 	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
 }
 
@@ -311,17 +335,22 @@ func (m Model) renderOutputView(contentW, innerH int) string {
 	return lipgloss.NewStyle().MaxWidth(contentW).Render(strings.Join(m.outputLines[start:end], "\n"))
 }
 
-func (m Model) renderScripts(contentW int) string {
-	if len(m.scripts) == 0 {
-		return styleDim.Render("(no .sh scripts found)")
+func (m Model) renderScripts(contentW, innerH int) string {
+	vs := m.visibleScripts()
+	if len(vs) == 0 {
+		if m.filterPanel == panelScripts && m.filter != "" {
+			return styleDim.Render("(no scripts match \"" + m.filter + "\")")
+		}
+		return styleDim.Render("(no scripts found)")
 	}
+	start, end := window(len(vs), m.scriptCursor, innerH)
 	var b strings.Builder
-	for i, s := range m.scripts {
+	for i := start; i < end; i++ {
 		cursor := "  "
 		if m.focus == panelScripts && i == m.scriptCursor {
 			cursor = styleCursor.Render("> ")
 		}
-		b.WriteString(cursor + s.Name + "\n")
+		b.WriteString(cursor + vs[i].Name + "\n")
 	}
 	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
 }
@@ -366,7 +395,7 @@ func (m Model) helpView() string {
 		row("space", "Repos → branches · Scripts → run it · else back to Repos"),
 		row("g", "full-screen colored commit graph (j/k scroll · esc closes)"),
 		row("F", "toggle: show only changed / out-of-sync repos"),
-		row("/", "filter repos by name (esc clears)"),
+		row("/", "filter the focused list by name (esc clears)"),
 		"",
 		styleGroup.Render("Graph (4) & Changes (5)"),
 		row("4  j/k", "select a commit — or WIP (uncommitted) at the top"),
@@ -468,14 +497,14 @@ func (m Model) View() string {
 	reposPanel := titledPanel(1, "Repos", d.leftW, reposInner, m.focus == panelRepos,
 		lipgloss.NewStyle().MaxWidth(d.leftW-2).Render(clampLines(m.renderRepoBody(d), reposInner)))
 	scriptsPanel := titledPanel(2, "Scripts", d.leftW, scriptsInner, m.focus == panelScripts,
-		clampLines(m.renderScripts(d.leftW-2), scriptsInner))
+		clampLines(m.renderScripts(d.leftW-2, scriptsInner), scriptsInner))
 	left := lipgloss.JoinVertical(lipgloss.Left, reposPanel, scriptsPanel)
 
 	// right column: two stacked panels sharing the left panel's total height.
 	topInner := max((d.bodyH-2)*40/100, 3)
 	botInner := max((d.bodyH-2)-topInner, 3)
 	branches := titledPanel(3, "Branches", d.rightW, topInner, m.focus == panelBranches,
-		clampLines(m.renderBranches(d.rightW-2), topInner))
+		clampLines(m.renderBranches(d.rightW-2, topInner), topInner))
 	// bottom multi-view slot: 4 Graph / 5 Changes / 6 Output
 	bnum, btitle := 4, "Graph"
 	switch m.bottomView {

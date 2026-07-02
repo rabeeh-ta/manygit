@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"manygit/internal/config"
@@ -45,7 +47,8 @@ type Model struct {
 
 	filter          string
 	filtering       bool
-	filterAttention bool // show only repos with changes / ahead / behind
+	filterPanel     panel // which list `/` filters: panelRepos or panelScripts
+	filterAttention bool  // show only repos with changes / ahead / behind
 	showHelp        bool
 	showGraph       bool // full-screen commit graph overlay
 
@@ -82,6 +85,22 @@ type Model struct {
 
 	sem           chan struct{}
 	width, height int
+}
+
+// visibleScripts is the scripts list after the `/` filter (when it targets the
+// Scripts panel). The scriptCursor, run, and render all index this slice.
+func (m Model) visibleScripts() []discover.Script {
+	if m.filterPanel != panelScripts || m.filter == "" {
+		return m.scripts
+	}
+	needle := strings.ToLower(m.filter)
+	var out []discover.Script
+	for _, s := range m.scripts {
+		if strings.Contains(strings.ToLower(s.Name), needle) {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // New builds a Model from discovered repos and scripts.

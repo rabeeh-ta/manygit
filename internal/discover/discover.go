@@ -2,6 +2,7 @@
 package discover
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -129,17 +130,42 @@ func Scripts(root string, maxDepth int, prune map[string]bool) []Script {
 				}
 				continue
 			}
-			if strings.HasSuffix(name, ".sh") {
-				full := filepath.Join(dir, name)
-				rel, err := filepath.Rel(root, full)
-				if err != nil {
-					rel = name
-				}
-				out = append(out, Script{Path: full, Name: rel})
+			full := filepath.Join(dir, name)
+			if !looksLikeScript(name, full, e) {
+				continue
 			}
+			rel, err := filepath.Rel(root, full)
+			if err != nil {
+				rel = name
+			}
+			out = append(out, Script{Path: full, Name: rel})
 		}
 	}
 	walk(root, 1)
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// looksLikeScript reports whether a file should be listed as a runnable script:
+// any *.sh, or an extensionless executable whose first bytes are a "#!" shebang
+// (catches helpers like scripts/sync-all without pulling in binaries or dotfiles).
+func looksLikeScript(name, full string, e os.DirEntry) bool {
+	if strings.HasSuffix(name, ".sh") {
+		return true
+	}
+	if strings.Contains(name, ".") {
+		return false
+	}
+	info, err := e.Info()
+	if err != nil || info.Mode()&0o111 == 0 {
+		return false
+	}
+	f, err := os.Open(full)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	buf := make([]byte, 2)
+	n, _ := io.ReadFull(f, buf)
+	return n == 2 && buf[0] == '#' && buf[1] == '!'
 }
