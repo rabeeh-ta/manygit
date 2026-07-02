@@ -19,7 +19,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 	case tea.FocusMsg:
-		// Terminal window regained focus — refresh every repo (like `r`).
+		// Terminal window regained focus — refresh every repo (like `r`), but
+		// only if we haven't fetched recently, so rapid alt-tabbing doesn't spray
+		// git fetches at every remote.
+		if !m.lastFetch.IsZero() && time.Since(m.lastFetch) < focusRefetchCooldown {
+			return m, nil
+		}
+		m.lastFetch = time.Now()
 		return m, m.refetchAllCmd()
 	case statusMsg:
 		for _, r := range m.repos {
@@ -215,6 +221,10 @@ func (m Model) runScriptCmd() tea.Cmd {
 	}
 	return startScriptCmd(vs[m.scriptCursor].Path, m.outputRun)
 }
+
+// focusRefetchCooldown is the minimum gap between terminal-focus refetches; a
+// manual `r` refresh is never gated by it (and resets the clock).
+const focusRefetchCooldown = 45 * time.Second
 
 // refetchAllCmd fetches every not-already-fetching repo (the `r` action, also
 // fired when the terminal window regains focus).
@@ -436,6 +446,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, fetchCmd(m.sem, r.repo.Path)
 		}
 	case "r":
+		m.lastFetch = time.Now() // manual refresh resets the focus cooldown
 		return m, m.refetchAllCmd()
 	case "s":
 		var cmds []tea.Cmd

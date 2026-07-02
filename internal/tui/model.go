@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -111,6 +112,11 @@ type Model struct {
 
 	sem           chan struct{}
 	width, height int
+
+	// lastFetch is when the most recent fetch burst started. A terminal-focus
+	// refetch is skipped if it fired within focusRefetchCooldown of this, so
+	// rapid alt-tabbing can't spray git fetches at every remote.
+	lastFetch time.Time
 }
 
 // visibleScripts is the scripts list after the `/` filter (when it targets the

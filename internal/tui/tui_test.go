@@ -517,6 +517,40 @@ func TestTUI_FocusRefetch(t *testing.T) {
 	}
 }
 
+// A focus event within the cooldown of the last fetch is ignored, so rapid
+// alt-tabbing doesn't spray git fetches; once the cooldown lapses, it refetches.
+func TestTUI_FocusRefetchCooldown(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	for _, r := range m.repos {
+		r.fetching = false
+	}
+	// A fetch just happened → an immediate focus must be a no-op.
+	m.lastFetch = time.Now()
+	mm, cmd := m.Update(tea.FocusMsg{})
+	m = mm.(Model)
+	if cmd != nil {
+		t.Error("a focus within the cooldown should not refetch")
+	}
+	for _, r := range m.repos {
+		if r.fetching {
+			t.Error("a focus within the cooldown must not mark repos fetching")
+		}
+	}
+	// Once the cooldown has lapsed, focus refetches again.
+	m.lastFetch = time.Now().Add(-2 * focusRefetchCooldown)
+	mm, cmd = m.Update(tea.FocusMsg{})
+	m = mm.(Model)
+	if cmd == nil {
+		t.Error("a focus after the cooldown should refetch")
+	}
+	for _, r := range m.repos {
+		if !r.fetching {
+			t.Error("a focus after the cooldown should mark every repo fetching")
+		}
+	}
+}
+
 // z maximizes the focused pane; zoom follows focus; z again restores the layout.
 func TestTUI_Zoom(t *testing.T) {
 	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
