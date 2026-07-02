@@ -497,7 +497,7 @@ func (m Model) footer() string {
 		space = "space run"
 	}
 	return styleDim.Render(
-		space + " | z zoom | 7 agent | g graph | F changed | s sync | p push | d/D discard | o open | r refetch | ? help | q quit")
+		space + " | z zoom | 7 agent | g graph | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ? help | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -672,6 +672,7 @@ func (m Model) keysBody() string {
 		kr("j/k", "move in the focused panel"),
 		kr("space", "branches / run script / back"),
 		kr("g", "full-screen commit graph"),
+		kr("t", "latest tags of the current repo"),
 		kr("F", "only changed / unsynced repos"),
 		kr("/", "filter the focused list"),
 		"",
@@ -761,9 +762,58 @@ func (m Model) graphView() string {
 	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
 }
 
+// tagsView renders a full-screen list of the highlighted repo's latest tags,
+// newest first, with j/k scrolling.
+func (m Model) tagsView() string {
+	tw, th := m.width, m.height
+	if tw <= 0 {
+		tw = minTermW
+	}
+	if th <= 0 {
+		th = minTermH
+	}
+	innerH := th - 2 // border rows
+	if innerH < 3 {
+		innerH = 3
+	}
+	var content string
+	switch {
+	case m.tags == nil:
+		content = styleDim.Render("(loading tags…)")
+	case len(m.tags) == 0:
+		content = styleDim.Render("(no tags in " + m.tagsRepo + ")")
+	default:
+		lines := make([]string, len(m.tags))
+		for i, t := range m.tags {
+			meta := "  " + t.Hash + "  " + t.Date
+			if t.Subject != "" {
+				meta += "  " + t.Subject
+			}
+			lines[i] = styleYellow.Render(t.Name) + styleDim.Render(meta)
+		}
+		start := m.tagsOffset
+		if start > len(lines)-1 {
+			start = len(lines) - 1
+		}
+		if start < 0 {
+			start = 0
+		}
+		end := start + innerH
+		if end > len(lines) {
+			end = len(lines)
+		}
+		content = lipgloss.NewStyle().MaxWidth(tw - 4).Render(strings.Join(lines[start:end], "\n"))
+	}
+	box := titledBox("Tags: "+m.tagsRepo+"  (j/k scroll, esc close)", tw-2, innerH, true, content)
+	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
+}
+
 func (m Model) View() string {
 	if m.showGraph {
 		return m.graphView()
+	}
+	if m.showTags {
+		return m.tagsView()
 	}
 	if m.showHelp {
 		return m.helpView()

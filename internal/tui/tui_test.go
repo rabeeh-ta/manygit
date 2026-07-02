@@ -550,6 +550,39 @@ func drainCmd(c tea.Cmd) []tea.Msg {
 	}
 }
 
+// t toggles a full-screen tags overlay for the highlighted repo, loading its
+// tags; t (or esc) again closes it.
+func TestTUI_TagsToggle(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	m = mm.(Model)
+	if !m.showTags {
+		t.Fatal("t should open the tags overlay")
+	}
+	if m.tagsRepo != m.repos[0].repo.Name {
+		t.Errorf("tags overlay should be for the current repo, got %q", m.tagsRepo)
+	}
+	if cmd == nil {
+		t.Error("opening tags should dispatch a load command")
+	}
+
+	// a tags message populates the list
+	mm, _ = m.Update(tagsMsg{path: m.repos[0].repo.Path, tags: []git.Tag{{Name: "v1.0.0", Hash: "abc1234", Date: "2026-01-01"}}})
+	m = mm.(Model)
+	if len(m.tags) != 1 || m.tags[0].Name != "v1.0.0" {
+		t.Errorf("tags not populated: %+v", m.tags)
+	}
+
+	// t again toggles it closed
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	m = mm.(Model)
+	if m.showTags {
+		t.Error("t should toggle the tags overlay closed")
+	}
+}
+
 // d/D arm a discard confirmation on the highlighted repo; nothing runs until y.
 func TestTUI_DiscardConfirm(t *testing.T) {
 	cfg, repos := twoRepos(t)

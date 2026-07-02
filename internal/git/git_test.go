@@ -109,6 +109,49 @@ func TestDiscardAll(t *testing.T) {
 	}
 }
 
+// tagAt creates an annotated tag with a fixed tagger date so creatordate
+// ordering is deterministic in tests.
+func tagAt(t *testing.T, dir, date, name, msg string) {
+	t.Helper()
+	cmd := exec.Command("git", "tag", "-a", name, "-m", msg)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test",
+		"GIT_COMMITTER_DATE="+date, "GIT_AUTHOR_DATE="+date,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git tag %s: %v\n%s", name, err, out)
+	}
+}
+
+// Tags returns the repo's tags newest-first with their metadata.
+func TestTags(t *testing.T) {
+	dir := initRepo(t)
+	if tags, err := Tags(dir, 10); err != nil || len(tags) != 0 {
+		t.Fatalf("a fresh repo should have no tags, got %+v err %v", tags, err)
+	}
+	tagAt(t, dir, "2026-01-01T00:00:00", "v0.1.0", "first release")
+	tagAt(t, dir, "2026-06-01T00:00:00", "v0.2.0", "second release")
+
+	tags, err := Tags(dir, 10)
+	if err != nil {
+		t.Fatalf("Tags: %v", err)
+	}
+	if len(tags) != 2 {
+		t.Fatalf("want 2 tags, got %d: %+v", len(tags), tags)
+	}
+	if tags[0].Name != "v0.2.0" || tags[1].Name != "v0.1.0" {
+		t.Errorf("tags should be newest-first, got %q then %q", tags[0].Name, tags[1].Name)
+	}
+	if tags[0].Subject != "second release" {
+		t.Errorf("subject = %q, want %q", tags[0].Subject, "second release")
+	}
+	if tags[0].Hash == "" || tags[0].Date != "2026-06-01" {
+		t.Errorf("tag missing hash or wrong date: %+v", tags[0])
+	}
+}
+
 // initRepoWithRemote creates a bare "origin", a clone with one pushed commit,
 // and returns (clone, bare).
 func initRepoWithRemote(t *testing.T) (clone, bare string) {

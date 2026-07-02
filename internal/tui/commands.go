@@ -53,6 +53,13 @@ func discardCmd(sem chan struct{}, path string, full bool) tea.Cmd {
 	})
 }
 
+func tagsCmd(path string) tea.Cmd {
+	return func() tea.Msg {
+		tags, err := git.Tags(path, 50)
+		return tagsMsg{path: path, tags: tags, err: err}
+	}
+}
+
 func branchesCmd(path string) tea.Cmd {
 	return func() tea.Msg {
 		b, err := git.Branches(path)

@@ -170,6 +170,46 @@ func DiscardAll(dir string) error {
 	return err
 }
 
+// Tag is a git tag with the commit it points to and when it was created.
+type Tag struct {
+	Name    string
+	Hash    string // short hash of the tag's target
+	Date    string // YYYY-MM-DD it was created
+	Subject string // annotation message, or the commit subject for lightweight tags
+}
+
+// Tags returns up to n of the repo's most recent tags, newest first (by tag
+// creation date, falling back to the commit date for lightweight tags).
+func Tags(dir string, n int) ([]Tag, error) {
+	out, err := run(dir, "for-each-ref",
+		fmt.Sprintf("--count=%d", n),
+		"--sort=-creatordate",
+		"--format=%(refname:short)%09%(objectname:short)%09%(creatordate:short)%09%(contents:subject)",
+		"refs/tags")
+	if err != nil {
+		return nil, err
+	}
+	var tags []Tag
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		f := strings.SplitN(ln, "\t", 4)
+		t := Tag{Name: f[0]}
+		if len(f) > 1 {
+			t.Hash = f[1]
+		}
+		if len(f) > 2 {
+			t.Date = f[2]
+		}
+		if len(f) > 3 {
+			t.Subject = f[3]
+		}
+		tags = append(tags, t)
+	}
+	return tags, nil
+}
+
 // Branch is a local or remote branch of a repo.
 type Branch struct {
 	Name      string

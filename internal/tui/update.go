@@ -119,6 +119,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case tagsMsg:
+		if m.showTags {
+			m.tags = msg.tags
+			m.tagsOffset = 0
+		}
+		return m, nil
 	case graphMsg:
 		if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == msg.path {
 			m.graphLines = make([]string, len(msg.lines))
@@ -316,6 +322,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.showTags {
+		switch msg.String() {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		case "t", "esc":
+			m.showTags = false
+		case "down", "j":
+			if m.tagsOffset < len(m.tags)-1 {
+				m.tagsOffset++
+			}
+		case "up", "k":
+			if m.tagsOffset > 0 {
+				m.tagsOffset--
+			}
+		}
+		return m, nil
+	}
 	vis := m.visibleRepos()
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -331,6 +354,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Full-screen colored commit graph (reuses the loaded graph).
 		m.showGraph = true
 		m.graphOffset = 0
+	case "t":
+		// Full-screen list of the highlighted repo's latest tags (toggle; t/esc
+		// closes via the overlay handler above). Loaded fresh on open.
+		if r := m.currentVisible(vis); r != nil {
+			m.showTags = true
+			m.tagsOffset = 0
+			m.tags = nil
+			m.tagsRepo = r.repo.Name
+			return m, tagsCmd(r.repo.Path)
+		}
 	case "1":
 		m.focus = panelRepos
 	case "2":

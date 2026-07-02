@@ -34,6 +34,12 @@ type discardDoneMsg struct {
 	err  error
 }
 
+type tagsMsg struct {
+	path string
+	tags []git.Tag
+	err  error
+}
+
 type branchesMsg struct {
 	path     string
 	branches []git.Branch
