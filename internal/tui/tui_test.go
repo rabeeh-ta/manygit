@@ -472,6 +472,44 @@ func TestTUI_GraphDrillDown(t *testing.T) {
 	}
 }
 
+// z maximizes the focused pane; zoom follows focus; z again restores the layout.
+func TestTUI_Zoom(t *testing.T) {
+	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+
+	mm, _ := m.Update(rk("z"))
+	m = mm.(Model)
+	if !m.zoomed {
+		t.Fatal("z should zoom")
+	}
+	v := stripANSI(m.View())
+	if !strings.Contains(v, "[1] Repos") || !strings.Contains(v, "zoom") {
+		t.Errorf("zoom should show the focused Repos pane full-screen:\n%s", v)
+	}
+	if strings.Contains(v, "[3] Branches") || strings.Contains(v, "[2] Scripts") {
+		t.Error("zoom should show ONLY the focused pane")
+	}
+	// zoom follows focus
+	mm, _ = m.Update(rk("4"))
+	m = mm.(Model)
+	if !m.zoomed {
+		t.Error("switching focus should keep zoom on")
+	}
+	if !strings.Contains(stripANSI(m.View()), "Graph") {
+		t.Error("zoomed bottom slot should show the Graph view")
+	}
+	// z restores the full layout
+	mm, _ = m.Update(rk("z"))
+	m = mm.(Model)
+	if m.zoomed {
+		t.Error("z should un-zoom")
+	}
+	if v := stripANSI(m.View()); !strings.Contains(v, "[1] Repos") || !strings.Contains(v, "[3] Branches") {
+		t.Error("restored view should show all panels again")
+	}
+}
+
 // Action status messages set the status line and schedule an expiry; a matching
 // expiry clears it, but a stale one (older generation) must not.
 func TestTUI_StatusLineExpires(t *testing.T) {

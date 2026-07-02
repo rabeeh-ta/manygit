@@ -207,6 +207,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = true
 		m.showKeys = false
 		m.settingsCursor = themeIndex(m.cfg.Theme) // start on the active theme
+	case "z":
+		// Maximize the focused pane to full screen (toggle); zoom follows focus.
+		m.zoomed = !m.zoomed
 	case "g":
 		// Full-screen colored commit graph (reuses the loaded graph).
 		m.showGraph = true

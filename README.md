@@ -43,6 +43,7 @@ Actions apply to the **highlighted** repo (the `>` cursor) — there is no multi
 |---|---|
 | `1` `2` `3`, `tab` | focus Repos / Scripts / Branches (tab cycles all slots) |
 | `4` `5` `6` | bottom slot: **Graph** / **Changes** / **Output** |
+| `z` | zoom the focused pane full-screen (toggle; follows focus) |
 | `j`/`k`, `↑`/`↓` | move within the focused panel |
 | `space` | Repos panel → view branches · Scripts panel → run the script · else → back to Repos |
 | `enter` | Changes view: open the highlighted file's diff in-place (`esc` = back) |

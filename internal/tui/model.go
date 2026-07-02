@@ -51,6 +51,7 @@ type Model struct {
 	filterAttention bool  // show only repos with changes / ahead / behind
 	showHelp        bool  // the settings + help overlay
 	showGraph       bool  // full-screen commit graph overlay
+	zoomed          bool  // maximize the focused pane to full screen (z)
 
 	// settings overlay (?): a cursor over a flat radio-list of choices (each theme,
 	// each glyph option, then the editor row); showKeys flips to the keybindings

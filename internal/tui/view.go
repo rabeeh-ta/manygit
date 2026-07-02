@@ -482,7 +482,7 @@ func (m Model) footer() string {
 		space = "space run"
 	}
 	return styleDim.Render(
-		space + " | g graph | F changed | s sync | p push | o open | r refetch | ? help | q quit")
+		space + " | z zoom | g graph | F changed | s sync | p push | o open | r refetch | ? help | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -627,6 +627,7 @@ func (m Model) keysBody() string {
 		kr("1/2/3", "focus Repos / Scripts / Branches"),
 		kr("4/5/6", "bottom: Graph / Changes / Output"),
 		kr("tab", "cycle panels"),
+		kr("z", "zoom the focused pane full-screen"),
 		kr("j/k", "move in the focused panel"),
 		kr("space", "branches / run script / back"),
 		kr("g", "full-screen commit graph"),
@@ -725,6 +726,9 @@ func (m Model) View() string {
 	if m.showHelp {
 		return m.helpView()
 	}
+	if m.zoomed {
+		return m.zoomedView()
+	}
 	d := computeDims(m.width, m.height)
 	count := fmt.Sprintf("%d repos", len(m.repos))
 	if m.filterAttention || m.filter != "" {
@@ -768,6 +772,47 @@ func (m Model) View() string {
 	}
 	cols := lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gutter), right)
 	view := lipgloss.JoinVertical(lipgloss.Left, title, "", cols, m.bottomBar(tw))
+	return lipgloss.NewStyle().MaxWidth(tw).Render(view)
+}
+
+// zoomedView renders just the focused pane, maximized to the whole screen (z).
+// Zoom follows focus, so switching panes (1..6) shows the new one full-screen.
+func (m Model) zoomedView() string {
+	tw, th := m.width, m.height
+	if tw <= 0 {
+		tw = minTermW
+	}
+	if th <= 0 {
+		th = minTermH
+	}
+	title := styleTitle.Render("manygit") + "  " +
+		styleDim.Render(fmt.Sprintf("%d repos", len(m.repos))) +
+		styleDim.Render("   [zoom — z to restore]")
+
+	innerW := tw - 2                                   // panel inner (content + padding)
+	innerH := th - headerRows - footerRows - borderPad // panel inner height
+	if innerH < 3 {
+		innerH = 3
+	}
+	contentW := innerW - 2 // content area (minus panel padding)
+
+	var panel string
+	switch m.focus {
+	case panelBottom:
+		panel = titledBarBox(m.bottomTabs()+m.bottomHint(), innerW, innerH, true,
+			clampLines(m.renderBottom(contentW, innerH), innerH))
+	case panelScripts:
+		panel = titledPanel(2, "Scripts", innerW, innerH, true,
+			clampLines(m.renderScripts(contentW, innerH), innerH))
+	case panelBranches:
+		panel = titledPanel(3, "Branches", innerW, innerH, true,
+			clampLines(m.renderBranches(contentW, innerH), innerH))
+	default: // panelRepos
+		zd := dims{leftW: innerW, rightW: innerW, bodyH: innerH, nameW: max(8, contentW-20)}
+		panel = titledPanel(1, "Repos", innerW, innerH, true,
+			clampLines(m.renderRepoBody(zd), innerH))
+	}
+	view := lipgloss.JoinVertical(lipgloss.Left, title, "", panel, m.bottomBar(tw))
 	return lipgloss.NewStyle().MaxWidth(tw).Render(view)
 }
 
