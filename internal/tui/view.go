@@ -68,6 +68,31 @@ func titledBox(label string, innerW, innerH int, focused bool, content string) s
 	return strings.Join(lines, "\n")
 }
 
+// titledBarBox is titledBox for a label the caller has already styled (e.g. the
+// bottom slot's colored tab bar): it does not recolor the label, and truncates
+// ANSI-aware so embedded colors survive at narrow widths.
+func titledBarBox(label string, innerW, innerH int, focused bool, content string) string {
+	box := panelStyle(innerW, innerH, focused).Render(content)
+	lines := strings.Split(box, "\n")
+	if len(lines) == 0 || innerW < 6 {
+		return box
+	}
+	bc := lipgloss.Color("240")
+	if focused {
+		bc = borderAccent
+	}
+	if maxLabel := innerW - 3; maxLabel > 0 && lipgloss.Width(label) > maxLabel {
+		label = lipgloss.NewStyle().MaxWidth(maxLabel).Render(label)
+	}
+	fill := innerW - 1 - lipgloss.Width(label)
+	if fill < 0 {
+		fill = 0
+	}
+	border := lipgloss.NewStyle().Foreground(bc)
+	lines[0] = border.Render("╭─") + label + border.Render(strings.Repeat("─", fill)+"╮")
+	return strings.Join(lines, "\n")
+}
+
 // syncGlyph is the concise status token for a repo row. Ahead/behind use ↑/↓
 // when unicode=true (nicer, but East-Asian-ambiguous width — may render two
 // cells wide and drift columns in some terminals) or alignment-safe ASCII +/-
@@ -272,26 +297,29 @@ func (m Model) renderBranches(contentW, innerH int) string {
 }
 
 // bottomTabs is the tab-bar label for the multi-view bottom slot: the three
-// views with the active one bracketed (and a "*" on Output while a script runs),
-// so the inactive views are discoverable from the panel title.
+// views separated by dim "│" dividers, the active one in reverse-video and the
+// rest dim (a "*" on Output while a script runs), so the tabs read as distinct
+// and the inactive views are discoverable.
 func (m Model) bottomTabs() string {
 	views := []struct {
 		n    int
 		name string
 	}{{4, "Graph"}, {5, "Changes"}, {6, "Output"}}
+	activeStyle := lipgloss.NewStyle().Reverse(true).Bold(true)
 	tabs := make([]string, len(views))
 	for i, v := range views {
 		name := v.name
 		if v.n == 6 && m.outputRunning {
 			name += "*"
 		}
-		label := fmt.Sprintf("%d %s", v.n, name)
+		text := fmt.Sprintf(" %d %s ", v.n, name)
 		if i == int(m.bottomView) {
-			label = "[" + label + "]"
+			tabs[i] = activeStyle.Render(text)
+		} else {
+			tabs[i] = styleDim.Render(text)
 		}
-		tabs[i] = label
 	}
-	return strings.Join(tabs, " ")
+	return strings.Join(tabs, styleDim.Render("│"))
 }
 
 // renderBottom renders the active view of the multi-view bottom slot.
@@ -577,7 +605,7 @@ func (m Model) View() string {
 		clampLines(m.renderBranches(d.rightW-2, topInner), topInner))
 	// bottom multi-view slot: a tab bar of all three views (active bracketed) so
 	// the 5 Changes / 6 Output views are discoverable, not just the current one.
-	bottom := titledBox(m.bottomTabs(), d.rightW, botInner, m.focus == panelBottom,
+	bottom := titledBarBox(m.bottomTabs(), d.rightW, botInner, m.focus == panelBottom,
 		clampLines(m.renderBottom(d.rightW-2, botInner), botInner))
 	right := lipgloss.JoinVertical(lipgloss.Left, branches, bottom)
 

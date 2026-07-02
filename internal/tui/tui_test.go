@@ -580,28 +580,27 @@ func TestTUI_PanelsShowNumbers(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 120, 40)
 	view := stripANSI(m.View())
-	for _, want := range []string{"[1] Repos", "[2] Scripts", "[3] Branches", "[4 Graph]", "5 Changes", "6 Output"} {
+	for _, want := range []string{"[1] Repos", "[2] Scripts", "[3] Branches", "4 Graph", "5 Changes", "6 Output"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("View missing panel label %q", want)
 		}
 	}
 }
 
-// The bottom tab bar brackets the active view and marks Output with "*" while a
-// script is running, so all three views are always advertised.
+// The bottom tab bar lists all three views separated by "│" dividers and marks a
+// running Output with "*", so the views are distinct and always advertised.
 func TestTUI_BottomTabBar(t *testing.T) {
-	var m Model
-	if got := m.bottomTabs(); got != "[4 Graph] 5 Changes 6 Output" {
-		t.Errorf("graph active: %q", got)
-	}
-	m.bottomView = bvChanges
-	if got := m.bottomTabs(); got != "4 Graph [5 Changes] 6 Output" {
-		t.Errorf("changes active: %q", got)
+	var m Model // bottomView defaults to bvGraph
+	plain := stripANSI(m.bottomTabs())
+	for _, want := range []string{"4 Graph", "│", "5 Changes", "6 Output"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("tab bar %q missing %q", plain, want)
+		}
 	}
 	m.bottomView = bvOutput
 	m.outputRunning = true
-	if got := m.bottomTabs(); got != "4 Graph 5 Changes [6 Output*]" {
-		t.Errorf("output active+running: %q", got)
+	if got := stripANSI(m.bottomTabs()); !strings.Contains(got, "6 Output*") {
+		t.Errorf("running Output tab should show *: %q", got)
 	}
 }
 
