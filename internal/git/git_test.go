@@ -286,17 +286,23 @@ func TestWorkingFileDiff_NoCommits(t *testing.T) {
 }
 
 func TestRecentCommits(t *testing.T) {
-	dir := initRepo(t) // one commit "init", just made
-	all, err := RecentCommits(dir, 5, "")
+	dir := initRepo(t) // -b master, one commit "init", just made
+	if ref := MainRef(dir); ref != "master" {
+		t.Fatalf("MainRef = %q, want master", ref)
+	}
+	all, err := RecentCommits(dir, "master", 5, "")
 	if err != nil || len(all) != 1 || all[0] != "init" {
 		t.Fatalf("RecentCommits(no window) = %v, %v", all, err)
 	}
-	recent, err := RecentCommits(dir, 5, "1 day ago") // window includes the fresh commit
+	recent, err := RecentCommits(dir, "master", 5, "1 day ago") // window includes the fresh commit
 	if err != nil || len(recent) != 1 {
 		t.Errorf("RecentCommits(1 day) = %v, %v", recent, err)
 	}
+	if got, _ := RecentCommits(dir, "", 5, ""); len(got) != 0 {
+		t.Errorf("an empty ref should return nothing, got %v", got)
+	}
 
-	// a commit dated long ago is excluded by a short window
+	// a commit dated long ago on main is excluded by a short window
 	old := t.TempDir()
 	gitCmd(t, old, "init", "-q", "-b", "main")
 	if err := os.WriteFile(filepath.Join(old, "a.txt"), []byte("x\n"), 0o644); err != nil {
@@ -311,10 +317,13 @@ func TestRecentCommits(t *testing.T) {
 	if out, err := c.CombinedOutput(); err != nil {
 		t.Fatalf("commit: %v\n%s", err, out)
 	}
-	if got, _ := RecentCommits(old, 5, "3 days ago"); len(got) != 0 {
+	if ref := MainRef(old); ref != "main" {
+		t.Errorf("MainRef(old) = %q, want main", ref)
+	}
+	if got, _ := RecentCommits(old, "main", 5, "3 days ago"); len(got) != 0 {
 		t.Errorf("a 3-day window should exclude a 2020 commit, got %v", got)
 	}
-	if got, _ := RecentCommits(old, 5, ""); len(got) != 1 {
+	if got, _ := RecentCommits(old, "main", 5, ""); len(got) != 1 {
 		t.Errorf("no window should include the old commit, got %v", got)
 	}
 }

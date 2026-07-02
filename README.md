@@ -136,12 +136,14 @@ their palettes adapted from [monkeytype](https://github.com/monkeytypegame/monke
 
 When an AI [harness](#settings--themes-) is configured, the top bar (after the
 `manygit` brand) becomes a **news feed**: a beat after a fetch/refetch settles,
-manygit gathers commits from the last **N days** (the *News window* setting —
-`1 / 3 / 7 / 14` days, default 3) across all repos, asks the harness to summarize
-them into short headlines, and rotates through them (`news <headline>   (1/N)`,
-~12s each). Quiet repos (nothing in the window) contribute nothing, so the feed
-stays current. Without a harness — or while filtering — it falls back to the repo
-count. Commit subjects are sent to your harness CLI.
+manygit gathers commits from the **main branch** of each repo (`origin/main` /
+`origin/master`, falling back to local `main` / `master`) within the last **N
+days** (the *News window* setting — `1 / 3 / 7 / 14` days, default 3), asks the
+harness to summarize them into short headlines, and rotates through them
+(`news <headline>   (1/N)`, ~12s each). Only the main-branch commit *subjects* in
+the window are sent; a repo (or the whole workspace) with nothing in the window
+sends nothing — no headlines, no harness call. Without a harness — or while
+filtering — it falls back to the repo count.
 
 ## AI agent (`7`)
 

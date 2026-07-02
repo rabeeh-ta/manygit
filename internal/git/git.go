@@ -56,12 +56,33 @@ func resolveDefault(dir string) string {
 }
 
 // Status computes the RepoStatus for the repo at dir.
-// RecentCommits returns up to n of the most recent commit subjects across all
-// refs (branches + remote-tracking), newest first. When since is non-empty (a
-// git approxidate like "3 days ago") only commits newer than it are returned, so
-// a quiet repo contributes nothing. Empty for a commitless repo.
-func RecentCommits(dir string, n int, since string) ([]string, error) {
-	args := []string{"log", "-n", strconv.Itoa(n), "--all", "--pretty=format:%s"}
+// MainRef returns the best ref to read the repo's main-branch history from,
+// preferring the remote default (so freshly-fetched commits show) then the local
+// default: origin/main, origin/master, main, master. "" if none exist.
+func MainRef(dir string) string {
+	for _, ref := range []string{"origin/main", "origin/master", "main", "master"} {
+		if refExists(dir, ref) {
+			return ref
+		}
+	}
+	return ""
+}
+
+func refExists(dir, ref string) bool {
+	_, err := run(dir, "rev-parse", "--verify", "--quiet", ref)
+	return err == nil
+}
+
+// RecentCommits returns up to n of the most recent commit subjects on ref
+// (typically the main/master branch — see MainRef), newest first. When since is
+// non-empty (a git approxidate like "3 days ago") only commits newer than it are
+// returned, so a quiet branch contributes nothing. Empty when ref is "" or has no
+// matching commits.
+func RecentCommits(dir, ref string, n int, since string) ([]string, error) {
+	if ref == "" {
+		return nil, nil
+	}
+	args := []string{"log", ref, "-n", strconv.Itoa(n), "--pretty=format:%s"}
 	if since != "" {
 		args = append(args, "--since="+since)
 	}

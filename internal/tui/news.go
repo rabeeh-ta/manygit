@@ -20,13 +20,13 @@ const (
 // newsRepo is the minimal per-repo info the news refresh needs (captured up
 // front so the background command doesn't touch the live Model).
 type newsRepo struct {
-	name, path, branch string
+	name, path string
 }
 
 func (m Model) newsRepos() []newsRepo {
 	rs := make([]newsRepo, 0, len(m.repos))
 	for _, r := range m.repos {
-		rs = append(rs, newsRepo{name: r.repo.Name, path: r.repo.Path, branch: r.status.Branch})
+		rs = append(rs, newsRepo{name: r.repo.Name, path: r.repo.Path})
 	}
 	return rs
 }
@@ -43,16 +43,13 @@ func newsRefreshCmd(h harness.Harness, dir string, repos []newsRepo, days, gen i
 		var b strings.Builder
 		any := false
 		for _, r := range repos {
-			commits, _ := git.RecentCommits(r.path, newsCommitsPerRepo, since)
+			ref := git.MainRef(r.path) // main/master only, not every branch
+			commits, _ := git.RecentCommits(r.path, ref, newsCommitsPerRepo, since)
 			if len(commits) == 0 {
 				continue
 			}
 			any = true
-			branch := r.branch
-			if branch == "" {
-				branch = "?"
-			}
-			fmt.Fprintf(&b, "repo %s (branch %s):\n", r.name, branch)
+			fmt.Fprintf(&b, "repo %s (%s):\n", r.name, ref)
 			for _, c := range commits {
 				fmt.Fprintf(&b, "  - %s\n", c)
 			}
@@ -60,7 +57,7 @@ func newsRefreshCmd(h harness.Harness, dir string, repos []newsRepo, days, gen i
 		if !any {
 			return newsFeedMsg{gen: gen}
 		}
-		prompt := fmt.Sprintf(`Below are recent commits across several git repositories. Write a short "news feed" of the notable activity — new features, fixes, releases, notable branch work. 3 to 8 punchy one-line headlines, each under ~70 characters. One headline per line. No numbering, no markdown, no preamble.
+		prompt := fmt.Sprintf(`Below are recent commits on the main branch of several git repositories. Write a short "news feed" of the notable activity — new features, fixes, releases. 3 to 8 punchy one-line headlines, each under ~70 characters. One headline per line. No numbering, no markdown, no preamble.
 
 %s`, b.String())
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
