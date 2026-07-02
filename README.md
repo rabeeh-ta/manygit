@@ -1,8 +1,12 @@
 # manygit
 
 A stripped-down, lazygit-style TUI for managing **many git repos at once** —
-see at a glance which are in sync / ahead / behind / dirty, and safely fetch,
-fast-forward pull, push, or switch branches on the highlighted repo.
+see at a glance each repo's current branch and whether it's in sync / ahead /
+behind / dirty, and safely fetch, fast-forward pull, push, or switch branches on
+the highlighted repo.
+
+Each Repos row shows the repo name followed by its current branch in dim parens
+(`name (branch)`), truncated to fit the column.
 
 ## Install
 

@@ -244,6 +244,52 @@ func TestTUI_GraphRefsShortened(t *testing.T) {
 	}
 }
 
+// A repo row shows the current branch in dim parens after the name, truncated to
+// fit, and rows stay equal width so the columns don't drift.
+func TestTUI_RepoRowShowsBranch(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 120, 30)
+	d := computeDims(120, 30)
+	m.repos[0].status = git.RepoStatus{Branch: "main"}
+	m.repos[1].status = git.RepoStatus{Branch: "feature/really-long-branch-that-overflows-the-column"}
+
+	r0 := m.renderRow(0, m.repos[0], d.nameW)
+	r1 := m.renderRow(1, m.repos[1], d.nameW)
+	if !strings.Contains(stripANSI(r0), "(main)") {
+		t.Errorf("row should show the current branch, got %q", stripANSI(r0))
+	}
+	if lipgloss.Width(r0) != lipgloss.Width(r1) {
+		t.Errorf("rows must be equal width: %d vs %d", lipgloss.Width(r0), lipgloss.Width(r1))
+	}
+	if strings.Contains(stripANSI(r1), "overflows") {
+		t.Errorf("a long branch should be truncated, got %q", stripANSI(r1))
+	}
+	// no branch (e.g. an errored repo) -> no parens, same width
+	m.repos[0].status = git.RepoStatus{}
+	rEmpty := m.renderRow(0, m.repos[0], d.nameW)
+	if strings.Contains(stripANSI(rEmpty), "(") {
+		t.Errorf("no branch should show no parens, got %q", stripANSI(rEmpty))
+	}
+	if lipgloss.Width(rEmpty) != lipgloss.Width(r0) {
+		t.Error("empty-branch row width should match a branch row")
+	}
+
+	// Every row must be a single physical line, even with wide-character (CJK)
+	// branch names — a wrapped row would shove the dirty/status columns off-axis.
+	// (lipgloss.Width alone can't catch this: it returns the max width across the
+	// wrapped lines, which Width(nameW) has padded back to the same value.)
+	for _, br := range []string{"main", "功能分支名称非常长的中文分支", "🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀"} {
+		m.repos[0].status = git.RepoStatus{Branch: br}
+		row := m.renderRow(0, m.repos[0], d.nameW)
+		if strings.Contains(row, "\n") {
+			t.Errorf("row for branch %q wrapped to multiple lines: %q", br, stripANSI(row))
+		}
+		if lipgloss.Width(row) != lipgloss.Width(rEmpty) {
+			t.Errorf("row for branch %q width %d != %d", br, lipgloss.Width(row), lipgloss.Width(rEmpty))
+		}
+	}
+}
+
 // titledBox must keep the top border aligned even when the label contains
 // non-ASCII characters (e.g. an accented repo name in the graph title).
 func TestTUI_TitledBoxNonASCIILabel(t *testing.T) {

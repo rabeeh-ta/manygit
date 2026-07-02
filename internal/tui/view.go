@@ -107,16 +107,31 @@ func dirtyBadge(st git.RepoStatus) string {
 	return ""
 }
 
-// truncate shortens s to at most w display cells (repo names are plain ASCII).
+// truncate shortens s to at most w display cells, appending "…" when it cuts.
+// Width-aware: wide (CJK/emoji) runes count as their real cell width, so the
+// result never exceeds w cells (git branch names are not guaranteed ASCII).
 func truncate(s string, w int) string {
-	r := []rune(s)
-	if len(r) <= w {
+	if w <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= w {
 		return s
 	}
-	if w <= 1 {
-		return string(r[:w])
+	budget, tail := w-1, "…" // reserve one cell for the ellipsis
+	if budget <= 0 {
+		budget, tail = w, "" // only room for content, no tail
 	}
-	return string(r[:w-1]) + "…"
+	var out strings.Builder
+	used := 0
+	for _, r := range s {
+		rw := lipgloss.Width(string(r))
+		if used+rw > budget {
+			break
+		}
+		out.WriteRune(r)
+		used += rw
+	}
+	return out.String() + tail
 }
 
 // clampLines caps s to maxLines so content never overflows a panel's height.
@@ -166,22 +181,54 @@ func (m Model) currentVisible(vis []*repoVM) *repoVM {
 	return vis[m.cursor]
 }
 
+// currentBranch is the branch label to show for a repo, or "" if unknown.
+func currentBranch(st git.RepoStatus) string {
+	if st.Detached {
+		return "detached" // st.Branch is "(detached)"; avoid doubling the parens
+	}
+	return st.Branch
+}
+
+// fitNameBranch fits "name (branch)" into the name column of width w. The name
+// keeps priority; the branch is truncated to whatever room remains, or dropped
+// (returned "") when there isn't room for even a short one.
+func fitNameBranch(name, branch string, w int) (string, string) {
+	if branch == "" {
+		return truncate(name, w), ""
+	}
+	const wrap = 3 // " (" + ")"
+	nameW := lipgloss.Width(name)
+	if nameW+wrap+lipgloss.Width(branch) <= w {
+		return name, branch
+	}
+	if avail := w - nameW - wrap; avail >= 3 {
+		return name, truncate(branch, avail)
+	}
+	return truncate(name, w), ""
+}
+
 // renderRow composes one repo row from fixed-width, ANSI-aware cells so wide
 // glyphs never break alignment.
 func (m Model) renderRow(idx int, r *repoVM, nameW int) string {
 	cursor := "  "
-	nameStyle := lipgloss.NewStyle().Width(nameW)
+	nameFg := lipgloss.NewStyle()
 	if idx == m.cursor {
 		// Always mark the cursor repo so you can tell which repo the Branches/Log
 		// panels belong to; highlight it only when the Repos panel is focused.
 		if m.focus == panelRepos {
 			cursor = styleCursor.Render("> ")
-			nameStyle = nameStyle.Foreground(borderAccent).Bold(true)
+			nameFg = nameFg.Foreground(borderAccent).Bold(true)
 		} else {
 			cursor = styleDim.Render("> ")
 		}
 	}
-	nameCell := nameStyle.Render(truncate(r.repo.Name, nameW))
+	// name, then the current branch in dim parens, both fit within the name column.
+	name, branch := fitNameBranch(r.repo.Name, currentBranch(r.status), nameW)
+	content := nameFg.Render(name)
+	if branch != "" {
+		content += styleDim.Render(" (" + branch + ")")
+	}
+	nameCell := lipgloss.NewStyle().Width(nameW).Render(content)
 	dirtyCell := lipgloss.NewStyle().Width(wDirty).Render(dirtyBadge(r.status))
 	statusCell := lipgloss.NewStyle().Width(wStatus).Render(syncGlyph(r, m.cfg.UnicodeGlyphs()))
 	// Two spaces after the cursor fill the mark + gutter columns computeDims
