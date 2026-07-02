@@ -498,6 +498,58 @@ func TestTUI_ReposScroll(t *testing.T) {
 	}
 }
 
+// With the Changes view (5) open, browsing repos in the Repos panel must refresh
+// it to follow the highlighted repo (it used to stay stuck on the first repo).
+func TestTUI_ChangesFollowsRepoCursor(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+
+	// open Changes (5), then focus Repos (1)
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
+	m = mm.(Model)
+	if m.bottomView != bvChanges {
+		t.Fatal("5 should show the Changes view")
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	m = mm.(Model)
+
+	// move the repo cursor to the second repo
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = mm.(Model)
+	if m.cursor != 1 {
+		t.Fatalf("cursor should have moved to 1, got %d", m.cursor)
+	}
+
+	// the resulting command must include a changes reload for the NEW repo
+	want := m.repos[1].repo.Path
+	found := false
+	for _, msg := range drainCmd(cmd) {
+		if cm, ok := msg.(changesMsg); ok && cm.path == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("moving the repo cursor with Changes open should refresh it for the new repo")
+	}
+}
+
+// drainCmd runs a (possibly batched) command and returns every message it emits.
+func drainCmd(c tea.Cmd) []tea.Msg {
+	if c == nil {
+		return nil
+	}
+	switch msg := c().(type) {
+	case tea.BatchMsg:
+		var out []tea.Msg
+		for _, sub := range msg {
+			out = append(out, drainCmd(sub)...)
+		}
+		return out
+	default:
+		return []tea.Msg{msg}
+	}
+}
+
 // Regaining terminal-window focus refetches every repo (like `r`).
 func TestTUI_FocusRefetch(t *testing.T) {
 	cfg, repos := twoRepos(t)

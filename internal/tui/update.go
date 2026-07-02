@@ -188,13 +188,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// loadContextCmd loads branches + the commit graph for the highlighted repo.
+// loadContextCmd loads branches + the commit graph for the highlighted repo
+// (and refreshes the Changes view when it's the one on screen).
 func (m Model) loadContextCmd() tea.Cmd {
 	r := m.currentVisible(m.visibleRepos())
 	if r == nil {
 		return nil
 	}
-	return tea.Batch(branchesCmd(r.repo.Path), graphCmd(r.repo.Path, 200))
+	cmds := []tea.Cmd{branchesCmd(r.repo.Path), graphCmd(r.repo.Path, 200)}
+	// The graph resets to WIP on reload, so keep a visible Changes view (5) in
+	// step by refreshing it to the new repo's working-tree changes — otherwise it
+	// stays stuck on the repo it was opened on while you browse others.
+	if m.bottomView == bvChanges {
+		cmds = append(cmds, changesCmd(r.repo.Path, ""))
+	}
+	return tea.Batch(cmds...)
 }
 
 // selectedRef returns the git ref the graph cursor is on: "" for WIP (working
