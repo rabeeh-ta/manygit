@@ -1,29 +1,20 @@
 package harness
 
 import (
-	"strings"
+	"reflect"
 	"testing"
 )
 
-// The agent is one-shot, so every harness must invoke its fastest model/mode
-// and keep the prompt as the final positional arg.
-func TestOneShotArgsRequestFastModel(t *testing.T) {
+// The one-shot argv is just the base flags plus the prompt as the final
+// positional arg — no model override, so the CLI uses its own default.
+func TestOneShotArgs(t *testing.T) {
 	claude, _ := ByName("claude")
-	args := claude.oneShotArgs("merge main")
-	if got := args[len(args)-1]; got != "merge main" {
-		t.Errorf("prompt must be the last arg, got %q in %v", got, args)
+	if got, want := claude.oneShotArgs("merge main"), []string{"-p", "merge main"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("claude oneShotArgs = %v, want %v", got, want)
 	}
-	if !strings.Contains(strings.Join(args, " "), "--model haiku") {
-		t.Errorf("claude one-shot should request the fast model: %v", args)
-	}
-
 	codex, _ := ByName("codex")
-	cargs := codex.oneShotArgs("merge main")
-	if got := cargs[len(cargs)-1]; got != "merge main" {
-		t.Errorf("prompt must be the last arg, got %q in %v", got, cargs)
-	}
-	if !strings.Contains(strings.Join(cargs, " "), "model_reasoning_effort=low") {
-		t.Errorf("codex one-shot should request low reasoning effort: %v", cargs)
+	if got, want := codex.oneShotArgs("merge main"), []string{"exec", "merge main"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("codex oneShotArgs = %v, want %v", got, want)
 	}
 }
 

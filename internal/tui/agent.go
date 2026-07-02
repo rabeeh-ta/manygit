@@ -118,18 +118,13 @@ func parseCommands(out string) []string {
 // isNote reports whether a proposed line is an explanatory note, not a command.
 func isNote(line string) bool { return strings.HasPrefix(line, "# ") }
 
-// harnessLabel describes the active harness for the agent title, including the
-// quick model/mode it runs with so it's clear replies stay fast.
+// harnessLabel describes the active harness for the agent title.
 func (m Model) harnessLabel() string {
 	switch {
 	case m.cfg.Harness == "":
 		return "no AI harness — pick one in ? settings"
 	case harness.Available(m.cfg.Harness):
-		label := "harness: " + m.cfg.Harness
-		if h, ok := harness.ByName(m.cfg.Harness); ok && h.FastHint() != "" {
-			label += " · " + h.FastHint()
-		}
-		return label
+		return "harness: " + m.cfg.Harness
 	default:
 		return "harness: " + m.cfg.Harness + " (not installed)"
 	}
