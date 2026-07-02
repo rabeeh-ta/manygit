@@ -734,14 +734,12 @@ func (m Model) View() string {
 		return m.zoomedView()
 	}
 	d := computeDims(m.width, m.height)
-	count := fmt.Sprintf("%d repos", len(m.repos))
-	if m.filterAttention || m.filter != "" {
-		count = fmt.Sprintf("%d of %d repos", len(m.visibleRepos()), len(m.repos))
+	tw := m.width
+	if tw <= 0 {
+		tw = minTermW
 	}
-	title := styleTitle.Render("manygit") + "  " + styleDim.Render(count)
-	if m.filterAttention {
-		title += "  " + styleYellow.Render("[changed / unsynced]")
-	}
+	brand := styleTitle.Render("manygit") + "  "
+	title := brand + m.topBar(max(0, tw-lipgloss.Width(brand)))
 
 	// left column: Repos (large) over a small Scripts panel; the two share the
 	// column's total height, matching the right column.
@@ -770,10 +768,6 @@ func (m Model) View() string {
 		clampLines(m.renderBottom(d.rightW-2, botInner), botInner))
 	right := lipgloss.JoinVertical(lipgloss.Left, branches, bottom)
 
-	tw := m.width
-	if tw <= 0 {
-		tw = minTermW
-	}
 	cols := lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gutter), right)
 	view := lipgloss.JoinVertical(lipgloss.Left, title, "", cols, m.bottomBar(tw))
 	return lipgloss.NewStyle().MaxWidth(tw).Render(view)
@@ -818,6 +812,32 @@ func (m Model) zoomedView() string {
 	}
 	view := lipgloss.JoinVertical(lipgloss.Left, title, "", panel, m.bottomBar(tw))
 	return lipgloss.NewStyle().MaxWidth(tw).Render(view)
+}
+
+// topBar fills the space after the brand: the AI news feed (rotating commit
+// headlines) when available, otherwise the repo count / filter context.
+func (m Model) topBar(width int) string {
+	// While filtering or in the attention view, show the count context there.
+	if m.filtering || m.filter != "" || m.filterAttention {
+		count := fmt.Sprintf("%d of %d repos", len(m.visibleRepos()), len(m.repos))
+		if m.filterAttention {
+			count += "  " + styleYellow.Render("[changed / unsynced]")
+		}
+		return lipgloss.NewStyle().MaxWidth(width).Render(styleDim.Render(count))
+	}
+	if len(m.newsFeed) == 0 {
+		count := fmt.Sprintf("%d repos", len(m.repos))
+		if m.newsLoading {
+			count += styleDim.Render("   summarizing commits...")
+		}
+		return lipgloss.NewStyle().MaxWidth(width).Render(styleDim.Render(count))
+	}
+	headline := m.newsFeed[m.newsIndex%len(m.newsFeed)]
+	line := styleGroup.Render("news ") + headline
+	if len(m.newsFeed) > 1 {
+		line += styleDim.Render(fmt.Sprintf("   (%d/%d)", m.newsIndex%len(m.newsFeed)+1, len(m.newsFeed)))
+	}
+	return lipgloss.NewStyle().MaxWidth(width).Render(line)
 }
 
 // bottomBar is the footer line: the status/filter/key-hints on the left and the

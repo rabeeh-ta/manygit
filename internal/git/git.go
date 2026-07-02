@@ -56,6 +56,19 @@ func resolveDefault(dir string) string {
 }
 
 // Status computes the RepoStatus for the repo at dir.
+// RecentCommits returns up to n of the most recent commit subjects across all
+// refs (branches + remote-tracking), newest first. Empty for a commitless repo.
+func RecentCommits(dir string, n int) ([]string, error) {
+	out, err := run(dir, "log", "-n", strconv.Itoa(n), "--all", "--pretty=format:%s")
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(out) == "" {
+		return nil, nil
+	}
+	return strings.Split(out, "\n"), nil
+}
+
 func Status(dir string) RepoStatus {
 	st := RepoStatus{}
 

@@ -73,6 +73,24 @@ type statusExpireMsg struct {
 	gen int
 }
 
+// newsFeedMsg carries AI-summarized commit headlines for the top-bar feed.
+type newsFeedMsg struct {
+	gen       int
+	headlines []string
+	err       error
+}
+
+// newsTickMsg rotates the top-bar headline (dropped if gen is stale).
+type newsTickMsg struct {
+	gen int
+}
+
+// newsDebounceMsg fires a beat after a fetch; only the latest one refreshes the
+// news, coalescing a burst of fetches into one refresh.
+type newsDebounceMsg struct {
+	gen int
+}
+
 // agentProposedMsg carries the harness's generated commands (or an error).
 type agentProposedMsg struct {
 	commands []string

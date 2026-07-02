@@ -132,6 +132,15 @@ orange dirty) stay standard so they read the same in every theme. Built-in
 themes — `default` plus `serika_dark`, `dracula`, `nord`, `catppuccin`, `8008`,
 their palettes adapted from [monkeytype](https://github.com/monkeytypegame/monkeytype).
 
+## Top-bar news feed
+
+When an AI [harness](#settings--themes-) is configured, the top bar (after the
+`manygit` brand) becomes a **news feed**: a beat after a fetch/refetch settles,
+manygit gathers recent commits across all repos, asks the harness to summarize
+them into short headlines, and rotates through them every few seconds
+(`news <headline>   (1/N)`). Without a harness — or while filtering — it falls
+back to the repo count. Commit subjects are sent to your harness CLI.
+
 ## AI agent (`7`)
 
 Press `7` for a full-screen one-shot **AI command helper** over the whole

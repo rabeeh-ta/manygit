@@ -27,17 +27,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case fetchDoneMsg:
-		var cmd tea.Cmd
+		var cmds []tea.Cmd
 		for _, r := range m.repos {
 			if r.repo.Path == msg.path {
 				r.fetching = false
 				if msg.err == nil {
-					cmd = statusCmd(msg.path) // refresh ahead/behind asynchronously
+					cmds = append(cmds, statusCmd(msg.path)) // refresh ahead/behind asynchronously
 				}
 				break
 			}
 		}
-		return m, cmd
+		// Debounce a news refresh: only the latest tick in a fetch burst refreshes.
+		m.newsDebounce++
+		cmds = append(cmds, newsDebounceCmd(m.newsDebounce))
+		return m, tea.Batch(cmds...)
+	case newsDebounceMsg:
+		if msg.gen == m.newsDebounce {
+			return m, m.maybeRefreshNews()
+		}
+		return m, nil
+	case newsFeedMsg:
+		if msg.gen == m.newsGen {
+			m.newsLoading = false
+			if msg.err == nil {
+				m.newsFeed = msg.headlines
+				m.newsIndex = 0
+			}
+			if len(m.newsFeed) > 1 {
+				return m, newsTickCmd(m.newsGen)
+			}
+		}
+		return m, nil
+	case newsTickMsg:
+		if msg.gen == m.newsGen && len(m.newsFeed) > 1 {
+			m.newsIndex = (m.newsIndex + 1) % len(m.newsFeed)
+			return m, newsTickCmd(m.newsGen)
+		}
+		return m, nil
 	case syncDoneMsg:
 		exp := m.setStatus(m.syncResultText(msg))
 		cmds := []tea.Cmd{exp}

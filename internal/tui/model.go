@@ -101,6 +101,14 @@ type Model struct {
 	statusLine   string
 	statusGen    int // bumped on each status set; guards the expiry timer
 
+	// top-bar AI news feed: headlines summarizing recent commit activity,
+	// refreshed a beat after a fetch burst settles, rotated by a ticker.
+	newsFeed     []string
+	newsIndex    int
+	newsGen      int // bumped per refresh; guards stale refreshes/ticks
+	newsDebounce int // bumped on each fetch; the latest debounce tick refreshes
+	newsLoading  bool
+
 	sem           chan struct{}
 	width, height int
 }
