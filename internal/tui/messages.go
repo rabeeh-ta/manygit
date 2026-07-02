@@ -28,6 +28,12 @@ type pushDoneMsg struct {
 	err  error
 }
 
+type discardDoneMsg struct {
+	path string
+	full bool // D (also removed untracked) vs d (tracked changes only)
+	err  error
+}
+
 type branchesMsg struct {
 	path     string
 	branches []git.Branch

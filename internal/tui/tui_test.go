@@ -550,6 +550,58 @@ func drainCmd(c tea.Cmd) []tea.Msg {
 	}
 }
 
+// d/D arm a discard confirmation on the highlighted repo; nothing runs until y.
+func TestTUI_DiscardConfirm(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	// make the highlighted repo look dirty so the discard isn't a no-op
+	m.repos[0].status.DirtyCount = 2
+
+	// D arms the full-clean confirmation, marked full
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("D")})
+	m = mm.(Model)
+	if !m.confirmDiscard || !m.confirmDiscardFull || m.confirmDiscardPath != m.repos[0].repo.Path {
+		t.Fatalf("D should arm a full discard for the current repo: %+v", m.confirmDiscard)
+	}
+	if cmd == nil {
+		t.Error("arming should set a status prompt")
+	}
+
+	// a non-y key cancels without running anything
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = mm.(Model)
+	if m.confirmDiscard {
+		t.Error("any non-y key should cancel the discard")
+	}
+
+	// re-arm with lowercase d (tracked only), then y confirms → dispatches a command
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = mm.(Model)
+	if !m.confirmDiscard || m.confirmDiscardFull {
+		t.Fatal("d should arm a tracked-only discard")
+	}
+	mm, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = mm.(Model)
+	if m.confirmDiscard {
+		t.Error("y should disarm the confirmation")
+	}
+	if cmd == nil {
+		t.Error("y should dispatch the discard command")
+	}
+}
+
+// A discard on a repo known to be clean is a no-op (no confirmation armed).
+func TestTUI_DiscardCleanNoop(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m.repos[0].status.DirtyCount = 0 // clean (loadAll set loaded=true)
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("D")})
+	m = mm.(Model)
+	if m.confirmDiscard {
+		t.Error("discarding a clean repo should not arm a confirmation")
+	}
+}
+
 // Regaining terminal-window focus refetches every repo (like `r`).
 func TestTUI_FocusRefetch(t *testing.T) {
 	cfg, repos := twoRepos(t)

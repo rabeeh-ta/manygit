@@ -151,6 +151,25 @@ func Push(dir string) error {
 	return err
 }
 
+// DiscardTracked hard-resets tracked files to HEAD, reverting all modified and
+// staged changes. Untracked (never-committed) files are left in place.
+// Destructive and irreversible — callers must confirm first.
+func DiscardTracked(dir string) error {
+	_, err := run(dir, "reset", "--hard", "HEAD")
+	return err
+}
+
+// DiscardAll makes the working tree pristine: DiscardTracked plus removing every
+// untracked file and directory (git clean -fd). Ignored files (e.g. node_modules,
+// .env) are kept. Destructive and irreversible — callers must confirm first.
+func DiscardAll(dir string) error {
+	if err := DiscardTracked(dir); err != nil {
+		return err
+	}
+	_, err := run(dir, "clean", "-fd")
+	return err
+}
+
 // Branch is a local or remote branch of a repo.
 type Branch struct {
 	Name      string

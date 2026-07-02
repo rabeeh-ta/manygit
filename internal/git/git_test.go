@@ -63,6 +63,52 @@ func TestStatus_Dirty(t *testing.T) {
 	}
 }
 
+// DiscardTracked reverts modified tracked files but keeps untracked ones.
+func TestDiscardTracked(t *testing.T) {
+	dir := initRepo(t)
+	// modify a tracked file and create an untracked one
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("untracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := DiscardTracked(dir); err != nil {
+		t.Fatalf("DiscardTracked: %v", err)
+	}
+	// tracked file restored
+	if b, _ := os.ReadFile(filepath.Join(dir, "a.txt")); string(b) != "hello\n" {
+		t.Errorf("a.txt = %q, want it reverted to %q", b, "hello\n")
+	}
+	// untracked file kept
+	if _, err := os.Stat(filepath.Join(dir, "new.txt")); err != nil {
+		t.Errorf("untracked new.txt should survive DiscardTracked: %v", err)
+	}
+}
+
+// DiscardAll reverts tracked files AND removes untracked ones.
+func TestDiscardAll(t *testing.T) {
+	dir := initRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("untracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := DiscardAll(dir); err != nil {
+		t.Fatalf("DiscardAll: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "a.txt")); string(b) != "hello\n" {
+		t.Errorf("a.txt = %q, want reverted", b)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "new.txt")); !os.IsNotExist(err) {
+		t.Errorf("untracked new.txt should be deleted by DiscardAll")
+	}
+	if st := Status(dir); st.DirtyCount != 0 {
+		t.Errorf("repo should be clean after DiscardAll, DirtyCount=%d", st.DirtyCount)
+	}
+}
+
 // initRepoWithRemote creates a bare "origin", a clone with one pushed commit,
 // and returns (clone, bare).
 func initRepoWithRemote(t *testing.T) (clone, bare string) {

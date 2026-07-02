@@ -121,6 +121,14 @@ type Model struct {
 	// refetch is skipped if it fired within focusRefetchCooldown of this, so
 	// rapid alt-tabbing can't spray git fetches at every remote.
 	lastFetch time.Time
+
+	// discard confirm (d / D): armed on a repo; the next key confirms (y) or
+	// cancels. full distinguishes D (also delete untracked files) from d (tracked
+	// changes only). The path/name are remembered so the confirm hits that repo.
+	confirmDiscard     bool
+	confirmDiscardFull bool
+	confirmDiscardPath string
+	confirmDiscardName string
 }
 
 // visibleScripts is the scripts list after the `/` filter (when it targets the

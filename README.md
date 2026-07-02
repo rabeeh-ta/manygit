@@ -46,6 +46,7 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `j` `k` | move within the focused panel |
 | `space` | Repos → view branches · Scripts → run the script |
 | `s` / `p` | sync (fetch + ff-pull) / push the highlighted repo |
+| `d` / `D` | discard changes (confirm): `d` tracked only · `D` also deletes untracked files |
 | `f` / `r` | fetch one / refetch all |
 | `g` | full-screen commit graph |
 | `F` | show only repos with changes / ahead / behind |
@@ -77,8 +78,9 @@ theme: default          # default | serika_dark | dracula | nord | catppuccin | 
 status_glyphs: unicode  # or "ascii"
 ```
 
-manygit never writes to the folder you launch from, and never stashes, discards,
-force-pushes, merges, or rebases on its own.
+manygit never writes to the folder you launch from, and never force-pushes,
+merges, or rebases. The only destructive action is discarding a repo's changes
+(`d` / `D`), which always asks you to confirm first.
 
 ## Releasing (maintainer)
 

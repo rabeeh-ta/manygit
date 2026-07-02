@@ -39,6 +39,20 @@ func pushCmd(sem chan struct{}, path string) tea.Cmd {
 	return gated(sem, func() tea.Msg { return pushDoneMsg{path: path, err: git.Push(path)} })
 }
 
+// discardCmd discards a repo's changes: full=true also deletes untracked files
+// (D); false reverts only tracked changes (d). Runs only after user confirmation.
+func discardCmd(sem chan struct{}, path string, full bool) tea.Cmd {
+	return gated(sem, func() tea.Msg {
+		var err error
+		if full {
+			err = git.DiscardAll(path)
+		} else {
+			err = git.DiscardTracked(path)
+		}
+		return discardDoneMsg{path: path, full: full, err: err}
+	})
+}
+
 func branchesCmd(path string) tea.Cmd {
 	return func() tea.Msg {
 		b, err := git.Branches(path)

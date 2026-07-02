@@ -91,6 +91,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		exp := m.setStatus(s)
 		return m, tea.Batch(exp, statusCmd(msg.path))
+	case discardDoneMsg:
+		name := baseName(msg.path)
+		if msg.err != nil {
+			return m, m.setStatus(styleRed.Render("discard " + name + " failed: " + msg.err.Error()))
+		}
+		what := "tracked changes"
+		if msg.full {
+			what = "all changes"
+		}
+		exp := m.setStatus(styleGreen.Render("discarded " + what + " in " + name))
+		// Refresh the repo's dirty count and the visible panels (graph/changes).
+		return m, tea.Batch(exp, statusCmd(msg.path), m.loadContextCmd())
 	case checkoutDoneMsg:
 		name := baseName(msg.path)
 		if msg.err != nil {
@@ -278,6 +290,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if mm, cmd, handled := m.handleAgentNavKey(msg); handled {
 			return mm, cmd
 		}
+	}
+	if m.confirmDiscard {
+		full, path, name := m.confirmDiscardFull, m.confirmDiscardPath, m.confirmDiscardName
+		m.confirmDiscard = false
+		if msg.String() == "y" {
+			return m, tea.Batch(m.setStatus("discarding "+name+"..."), discardCmd(m.sem, path, full))
+		}
+		return m, m.setStatus("discard cancelled")
 	}
 	if m.showGraph {
 		switch msg.String() {
@@ -489,8 +509,35 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, pushCmd(m.sem, r.repo.Path))
 		}
 		return m, tea.Batch(cmds...)
+	case "d":
+		return m.armDiscard(vis, false) // discard tracked changes (keep untracked)
+	case "D":
+		return m.armDiscard(vis, true) // full clean (also delete untracked files)
 	}
 	return m, nil
+}
+
+// armDiscard arms the discard confirmation for the highlighted repo. full=true is
+// D (reverts tracked changes AND deletes untracked files); false is d (tracked
+// changes only). Nothing runs until the next key confirms with y.
+func (m Model) armDiscard(vis []*repoVM, full bool) (tea.Model, tea.Cmd) {
+	r := m.currentVisible(vis)
+	if r == nil {
+		return m, nil
+	}
+	name := baseName(r.repo.Path)
+	if r.loaded && r.status.DirtyCount == 0 {
+		return m, m.setStatus("nothing to discard in " + name)
+	}
+	m.confirmDiscard = true
+	m.confirmDiscardFull = full
+	m.confirmDiscardPath = r.repo.Path
+	m.confirmDiscardName = name
+	prompt := "discard changes in " + name + "?  y = confirm, any key = cancel"
+	if full {
+		prompt = "discard " + name + " + untracked files?  y = confirm, any key = cancel"
+	}
+	return m, m.setStatus(styleRed.Render(prompt))
 }
 
 func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

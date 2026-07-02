@@ -497,7 +497,7 @@ func (m Model) footer() string {
 		space = "space run"
 	}
 	return styleDim.Render(
-		space + " | z zoom | 7 agent | g graph | F changed | s sync | p push | o open | r refetch | ? help | q quit")
+		space + " | z zoom | 7 agent | g graph | F changed | s sync | p push | d/D discard | o open | r refetch | ? help | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -688,6 +688,7 @@ func (m Model) keysBody() string {
 		kr("p", "push"),
 		kr("f/r", "fetch current / refetch all"),
 		kr("b/enter", "checkout selected branch"),
+		kr("d/D", "discard changes / +untracked (confirm)"),
 		kr("o", "open the repo in your editor"),
 		"",
 		styleGroup.Render("Status column"),
