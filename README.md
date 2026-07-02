@@ -132,6 +132,20 @@ orange dirty) stay standard so they read the same in every theme. Built-in
 themes — `default` plus `serika_dark`, `dracula`, `nord`, `catppuccin`, `8008`,
 their palettes adapted from [monkeytype](https://github.com/monkeytypegame/monkeytype).
 
+## AI agent (`7`)
+
+Press `7` for a full-screen one-shot **AI command helper** over the whole
+workspace. Type an instruction (mostly git — "merge `feature/x` into main in the
+authoring repo", etc.); manygit sends it to the selected [harness](#settings--themes-)
+along with the **workspace context** (every repo, its branch and ahead/behind/dirty
+status). The harness returns the shell command(s); manygit shows them and runs
+them **only after you confirm** (`enter`/`y`; `esc`/`n` discards), then shows the
+output. `esc` closes. Requires an installed harness (see the bottom bar).
+
+> The commands come from the AI and can mutate your repos — that's why nothing
+> runs until you review and confirm. Commit/branch/tree data is sent to your
+> harness CLI (its own auth).
+
 ## Config (optional)
 
 `~/.config/manygit/config.yml` (also written by the settings screen):

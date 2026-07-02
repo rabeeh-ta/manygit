@@ -122,6 +122,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusLine = ""
 		}
 		return m, nil
+	case agentProposedMsg:
+		if m.showAgent && m.agentPhase == agentPhaseThinking {
+			if msg.err != nil {
+				m.agentErr = msg.err.Error()
+				m.agentPhase = agentPhaseInput
+			} else if len(msg.commands) == 0 {
+				m.agentErr = "the harness returned no commands"
+				m.agentPhase = agentPhaseInput
+			} else {
+				m.agentCommands = msg.commands
+				m.agentPhase = agentPhaseProposed
+			}
+		}
+		return m, nil
+	case agentExecutedMsg:
+		if m.showAgent && m.agentPhase == agentPhaseRunning {
+			m.agentOutput = msg.output
+			m.agentOffset = 0
+			m.agentPhase = agentPhaseDone
+		}
+		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -182,6 +203,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
 		return m.handleSettingsKey(msg)
 	}
+	if m.showAgent {
+		return m.handleAgentKey(msg)
+	}
 	if m.showGraph {
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -231,6 +255,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "6":
 		m.focus = panelBottom
 		m.bottomView = bvOutput
+	case "7":
+		// Full-screen AI agent (one-shot command helper over the workspace).
+		m.showAgent = true
+		m.agentPhase = agentPhaseInput
+		m.agentInputBuf = ""
+		m.agentCommands = nil
+		m.agentOutput = nil
+		m.agentErr = ""
 	case "tab":
 		m.focus = (m.focus + 1) % panelCount
 	case "down", "j":
@@ -506,6 +538,71 @@ func (m *Model) settingsSelect() {
 // the change applied for this session).
 func (m Model) saveConfig() {
 	_ = config.Save(m.cfg, "")
+}
+
+// handleAgentKey drives the Agent (7) one-shot flow: type an instruction → enter
+// asks the harness → review the proposed commands → enter/y runs them (esc/n
+// discards) → the output shows; esc closes the agent.
+func (m Model) handleAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyCtrlC {
+		return m, tea.Quit
+	}
+	switch m.agentPhase {
+	case agentPhaseInput:
+		switch msg.Type {
+		case tea.KeyEsc:
+			m.showAgent = false
+		case tea.KeyEnter:
+			if strings.TrimSpace(m.agentInputBuf) == "" {
+				return m, nil
+			}
+			h, ok := harness.ByName(m.cfg.Harness)
+			if !ok || !h.Installed() {
+				m.agentErr = "no AI harness installed — pick one in ? settings"
+				return m, nil
+			}
+			m.agentErr = ""
+			m.agentPhase = agentPhaseThinking
+			return m, agentRunCmd(h, m.harnessDir(), m.agentPrompt(m.agentInputBuf))
+		case tea.KeyBackspace:
+			if len(m.agentInputBuf) > 0 {
+				m.agentInputBuf = m.agentInputBuf[:len(m.agentInputBuf)-1]
+			}
+		case tea.KeyRunes, tea.KeySpace:
+			m.agentInputBuf += string(msg.Runes)
+		}
+	case agentPhaseThinking:
+		if msg.Type == tea.KeyEsc {
+			m.showAgent = false // a late agentProposedMsg is dropped (guarded)
+		}
+	case agentPhaseProposed:
+		switch msg.String() {
+		case "enter", "y":
+			m.agentPhase = agentPhaseRunning
+			return m, agentExecCmd(m.agentCommands)
+		case "esc", "n":
+			m.agentPhase = agentPhaseInput // discard, back to the instruction
+			m.agentCommands = nil
+		}
+	case agentPhaseRunning:
+		// keys ignored while the commands run
+	case agentPhaseDone:
+		switch msg.String() {
+		case "enter":
+			m.agentPhase = agentPhaseInput // new instruction
+			m.agentInputBuf = ""
+			m.agentCommands = nil
+			m.agentOutput = nil
+			m.agentOffset = 0
+		case "esc":
+			m.showAgent = false
+		case "down", "j":
+			m.agentOffset = clampInt(m.agentOffset+1, 0, max(0, len(m.agentOutput)-1))
+		case "up", "k":
+			m.agentOffset = clampInt(m.agentOffset-1, 0, max(0, len(m.agentOutput)-1))
+		}
+	}
+	return m, nil
 }
 
 func baseName(p string) string { return filepath.Base(p) }

@@ -53,6 +53,15 @@ type Model struct {
 	showGraph       bool  // full-screen commit graph overlay
 	zoomed          bool  // maximize the focused pane to full screen (z)
 
+	// agent view (7): one-shot AI command helper over the whole workspace.
+	showAgent     bool
+	agentPhase    agentPhase
+	agentInputBuf string
+	agentCommands []string
+	agentOutput   []string
+	agentOffset   int // scroll offset for the output
+	agentErr      string
+
 	// settings overlay (?): a cursor over a flat radio-list of choices (each theme,
 	// each glyph option, then the editor row); showKeys flips to the keybindings
 	// reference; editingOpenCmd/openCmdBuf drive the inline editor edit.

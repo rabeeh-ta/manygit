@@ -482,7 +482,7 @@ func (m Model) footer() string {
 		space = "space run"
 	}
 	return styleDim.Render(
-		space + " | z zoom | g graph | F changed | s sync | p push | o open | r refetch | ? help | q quit")
+		space + " | z zoom | 7 agent | g graph | F changed | s sync | p push | o open | r refetch | ? help | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -626,6 +626,7 @@ func (m Model) keysBody() string {
 		styleGroup.Render("Panels & navigation"),
 		kr("1/2/3", "focus Repos / Scripts / Branches"),
 		kr("4/5/6", "bottom: Graph / Changes / Output"),
+		kr("7", "AI agent (one-shot git helper)"),
 		kr("tab", "cycle panels"),
 		kr("z", "zoom the focused pane full-screen"),
 		kr("j/k", "move in the focused panel"),
@@ -725,6 +726,9 @@ func (m Model) View() string {
 	}
 	if m.showHelp {
 		return m.helpView()
+	}
+	if m.showAgent {
+		return m.agentView()
 	}
 	if m.zoomed {
 		return m.zoomedView()
