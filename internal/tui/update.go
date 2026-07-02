@@ -204,6 +204,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "?":
 		m.showHelp = true
+		m.showKeys = false
+		m.settingsCursor = themeIndex(m.cfg.Theme) // start on the active theme
 	case "g":
 		// Full-screen colored commit graph (reuses the loaded graph).
 		m.showGraph = true
@@ -404,13 +406,17 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, m.loadContextCmd()
 }
 
-// settingsRows is the number of editable rows in the settings overlay
-// (0 = theme, 1 = status glyphs, 2 = editor).
-const settingsRows = 3
+// The settings overlay is a flat radio-list: one row per theme, then the two
+// glyph options, then the editor row. These index into that list.
+func (m Model) glyphUnicodeIdx() int   { return len(themeList) }
+func (m Model) glyphAsciiIdx() int     { return len(themeList) + 1 }
+func (m Model) editorIdx() int         { return len(themeList) + 2 }
+func (m Model) settingsItemCount() int { return len(themeList) + 3 }
 
-// handleSettingsKey drives the settings + help overlay: j/k move between the
-// editable rows, h/l (or enter) change the highlighted setting, enter on the
-// editor row opens an inline text edit, and ?/esc closes.
+// handleSettingsKey drives the settings/help overlay: j/k move through the
+// radio-list (a theme row previews live), enter selects the highlighted row
+// (editor row → inline edit), tab/? flips to the keybindings reference, esc
+// closes (discarding any un-selected theme preview).
 func (m Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.editingOpenCmd {
 		switch msg.Type {
@@ -432,44 +438,56 @@ func (m Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
-	case "?", "esc":
+	case "tab", "?":
+		m.showKeys = !m.showKeys
+	case "esc":
+		applyTheme(themeByName(m.cfg.Theme)) // discard any live theme preview
 		m.showHelp = false
 	case "down", "j":
-		m.settingsCursor = clampInt(m.settingsCursor+1, 0, settingsRows-1)
+		if !m.showKeys {
+			m.settingsCursor = clampInt(m.settingsCursor+1, 0, m.settingsItemCount()-1)
+			m.previewSettings()
+		}
 	case "up", "k":
-		m.settingsCursor = clampInt(m.settingsCursor-1, 0, settingsRows-1)
-	case "right", "l":
-		m.settingsAdjust(1)
-	case "left", "h":
-		m.settingsAdjust(-1)
+		if !m.showKeys {
+			m.settingsCursor = clampInt(m.settingsCursor-1, 0, m.settingsItemCount()-1)
+			m.previewSettings()
+		}
 	case "enter", " ":
-		if m.settingsCursor == 2 { // editor: start an inline text edit
-			m.editingOpenCmd = true
-			m.openCmdBuf = m.cfg.OpenCmd
-		} else {
-			m.settingsAdjust(1)
+		if !m.showKeys {
+			m.settingsSelect()
 		}
 	}
 	return m, nil
 }
 
-// settingsAdjust changes the highlighted setting by delta (theme cycles through
-// the theme list and applies live; glyphs toggles unicode/ascii) and persists.
-func (m *Model) settingsAdjust(delta int) {
-	switch m.settingsCursor {
-	case 0: // theme
-		n := len(themeList)
-		idx := ((themeIndex(m.cfg.Theme)+delta)%n + n) % n
-		m.cfg.Theme = themeList[idx].Name
-		applyTheme(themeList[idx])
+// previewSettings applies the theme under the cursor live (or the committed
+// theme when the cursor is off the theme rows), without persisting.
+func (m *Model) previewSettings() {
+	if m.settingsCursor < len(themeList) {
+		applyTheme(themeList[m.settingsCursor])
+	} else {
+		applyTheme(themeByName(m.cfg.Theme))
+	}
+}
+
+// settingsSelect commits the highlighted radio row: a theme (persisted), a glyph
+// mode (persisted), or the editor row (opens the inline text edit).
+func (m *Model) settingsSelect() {
+	switch c := m.settingsCursor; {
+	case c < len(themeList):
+		m.cfg.Theme = themeList[c].Name
+		applyTheme(themeList[c])
 		m.saveConfig()
-	case 1: // status glyphs
-		if m.cfg.UnicodeGlyphs() {
-			m.cfg.StatusGlyphs = "ascii"
-		} else {
-			m.cfg.StatusGlyphs = "unicode"
-		}
+	case c == m.glyphUnicodeIdx():
+		m.cfg.StatusGlyphs = "unicode"
 		m.saveConfig()
+	case c == m.glyphAsciiIdx():
+		m.cfg.StatusGlyphs = "ascii"
+		m.saveConfig()
+	case c == m.editorIdx():
+		m.editingOpenCmd = true
+		m.openCmdBuf = m.cfg.OpenCmd
 	}
 }
 

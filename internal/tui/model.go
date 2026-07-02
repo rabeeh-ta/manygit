@@ -52,9 +52,11 @@ type Model struct {
 	showHelp        bool  // the settings + help overlay
 	showGraph       bool  // full-screen commit graph overlay
 
-	// settings overlay (?): a cursor over the editable rows (theme/glyphs/editor)
-	// and an inline text-edit state for the editor (open_cmd) row.
+	// settings overlay (?): a cursor over a flat radio-list of choices (each theme,
+	// each glyph option, then the editor row); showKeys flips to the keybindings
+	// reference; editingOpenCmd/openCmdBuf drive the inline editor edit.
 	settingsCursor int
+	showKeys       bool
 	editingOpenCmd bool
 	openCmdBuf     string
 

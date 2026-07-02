@@ -664,23 +664,25 @@ func TestTUI_SyncGlyphModes(t *testing.T) {
 	}
 }
 
-// ? opens a help overlay explaining the status glyphs and keys; any other key closes it.
+// ? opens the settings overlay; tab flips to the keybindings/legend view; esc closes.
 func TestTUI_HelpOverlay(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 100, 30)
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	m = mm.(Model)
 	if !m.showHelp {
-		t.Fatal("? should open the help overlay")
+		t.Fatal("? should open the settings overlay")
 	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // flip to the keybindings view
+	m = mm.(Model)
 	v := stripANSI(m.View())
 	for _, want := range []string{"PUSH", "PULL", "dirty", "sync", "branches"} {
 		if !strings.Contains(v, want) {
-			t.Errorf("help overlay missing %q", want)
+			t.Errorf("keys view missing %q", want)
 		}
 	}
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if mm.(Model).showHelp {
-		t.Error("esc should close help")
+		t.Error("esc should close the overlay")
 	}
 }

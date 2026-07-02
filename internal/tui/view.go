@@ -472,51 +472,95 @@ func (m Model) statusOrFilterLine() string {
 	return m.footer()
 }
 
-// helpView renders the full-screen settings + help overlay: editable settings
-// (theme / glyphs / editor) on top, then a two-column keybinding + status
-// reference (two columns so it fits shorter terminals).
+// helpView renders the full-screen overlay: the Settings radio-list, or the
+// keybindings + status reference when toggled with tab.
 func (m Model) helpView() string {
-	// sRow renders an editable setting: cursor + label + value (the selected
-	// value is wrapped in < > to signal h/l changes it).
-	sRow := func(i int, label, value string) string {
-		cur := "  "
-		val := value
-		if m.settingsCursor == i {
-			cur = styleCursor.Render("> ")
-			if !(i == 2 && m.editingOpenCmd) {
-				val = styleCursor.Render("<") + " " + value + " " + styleCursor.Render(">")
-			}
-		}
-		return cur + lipgloss.NewStyle().Width(9).Render(label) + val
+	if m.showKeys {
+		return m.overlayBox(m.keysBody())
 	}
+	return m.overlayBox(m.settingsBody())
+}
+
+// overlayBox wraps overlay content in a full-screen focused panel.
+func (m Model) overlayBox(body string) string {
+	tw, th := m.width, m.height
+	if tw <= 0 {
+		tw = minTermW
+	}
+	if th <= 0 {
+		th = minTermH
+	}
+	box := panelStyle(tw-2, th-2, true).Render(clampLines(body, th-2))
+	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
+}
+
+// settingsBody is the Settings radio-list: one row per theme (previewed live as
+// the cursor lands), the two glyph options, and the editor. The selected value
+// in each group is marked (*), the cursor row is highlighted.
+func (m Model) settingsBody() string {
+	radio := func(idx int, label string, selected bool) string {
+		cur := "  "
+		lbl := styleDim.Render(label)
+		if m.settingsCursor == idx {
+			cur = styleCursor.Render("> ")
+			lbl = styleCursor.Render(label)
+		}
+		mark := "( ) "
+		if selected {
+			mark = styleGreen.Render("(*) ")
+		}
+		return "   " + cur + mark + lbl
+	}
+	lines := []string{
+		styleTitle.Render("manygit — settings"),
+		"",
+		styleGroup.Render("Theme") + styleDim.Render("   (previews live as you move)"),
+	}
+	for i, th := range themeList {
+		lines = append(lines, radio(i, th.Name, m.cfg.Theme == th.Name))
+	}
+	lines = append(lines,
+		"",
+		styleGroup.Render("Ahead / behind glyphs"),
+		radio(m.glyphUnicodeIdx(), "unicode  (arrows)", m.cfg.UnicodeGlyphs()),
+		radio(m.glyphAsciiIdx(), "ascii    (+ / -)", !m.cfg.UnicodeGlyphs()),
+		"",
+		styleGroup.Render("Editor")+styleDim.Render("   (the command `o` opens a repo with)"),
+	)
+	editorVal := m.cfg.OpenCmd
+	editorHint := ""
+	if m.editingOpenCmd {
+		editorVal = m.openCmdBuf + "_"
+		editorHint = styleDim.Render("   enter saves · esc cancels")
+	} else if m.settingsCursor == m.editorIdx() {
+		editorHint = styleDim.Render("   enter to edit")
+	}
+	ecur := "  "
+	eval := styleDim.Render(editorVal)
+	if m.settingsCursor == m.editorIdx() {
+		ecur = styleCursor.Render("> ")
+		eval = styleCursor.Render(editorVal)
+	}
+	lines = append(lines,
+		"   "+ecur+eval+editorHint,
+		styleDim.Render(fmt.Sprintf("   read-only (config.yml, needs restart): max_depth %d · concurrency %d", m.cfg.MaxDepth, m.cfg.Concurrency)),
+		styleDim.Render("   j/k move · enter select · tab keybindings · esc close"),
+	)
+	return strings.Join(lines, "\n")
+}
+
+// keysBody is the two-column keybinding + status-legend reference (two columns so
+// it fits shorter terminals).
+func (m Model) keysBody() string {
 	kr := func(key, desc string) string {
 		return "  " + lipgloss.NewStyle().Width(8).Render(key) + styleDim.Render(desc)
-	}
-	glyphs := "unicode (arrows)"
-	if !m.cfg.UnicodeGlyphs() {
-		glyphs = "ascii (+/-)"
-	}
-	editor := m.cfg.OpenCmd
-	if m.editingOpenCmd {
-		editor = m.openCmdBuf + "_"
-	}
-	hint := map[int]string{0: "h/l cycles themes", 1: "h/l toggles arrows/ascii", 2: "enter to edit"}[m.settingsCursor]
-	if m.editingOpenCmd {
-		hint = "type the command, enter saves, esc cancels"
 	}
 	up, down := "+", "-"
 	if m.cfg.UnicodeGlyphs() {
 		up, down = "↑", "↓"
 	}
-	settings := []string{
-		styleTitle.Render("manygit — settings & help"),
-		"",
-		styleGroup.Render("Settings") + styleDim.Render("  — j/k move, h/l change, saved to config.yml"),
-		sRow(0, "theme", m.cfg.Theme),
-		sRow(1, "glyphs", glyphs),
-		sRow(2, "editor", editor),
-		styleDim.Render("  " + hint),
-		styleDim.Render(fmt.Sprintf("  read-only: depth %d, concurrency %d (restart to change)", m.cfg.MaxDepth, m.cfg.Concurrency)),
+	head := []string{
+		styleTitle.Render("manygit — keybindings") + styleDim.Render("   (tab: back to settings · esc close)"),
 		"",
 	}
 	left := []string{
@@ -552,12 +596,9 @@ func (m Model) helpView() string {
 		kr(styleDim.Render("~ ."), "fetching / loading"),
 		kr(styleRed.Render("!"), "no upstream, or error"),
 	}
-	tw, th := m.width, m.height
+	tw := m.width
 	if tw <= 0 {
 		tw = minTermW
-	}
-	if th <= 0 {
-		th = minTermH
 	}
 	// Clip each column to its width budget (ANSI-aware) so neither can wrap and
 	// break alignment — leftW + rightW == the overlay's inner content width, so
@@ -577,10 +618,7 @@ func (m Model) helpView() string {
 		rightBlock[i] = lipgloss.NewStyle().MaxWidth(rightW).Render(ln)
 	}
 	cols := lipgloss.JoinHorizontal(lipgloss.Top, strings.Join(leftBlock, "\n"), strings.Join(rightBlock, "\n"))
-	body := strings.Join(settings, "\n") + "\n" + cols + "\n\n" +
-		styleDim.Render("  j/k move · h/l change · enter edit · ?/esc close · q quit")
-	box := panelStyle(tw-2, th-2, true).Render(clampLines(body, th-2))
-	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
+	return strings.Join(head, "\n") + "\n" + cols
 }
 
 // graphView renders a full-screen colored commit graph with j/k scrolling.

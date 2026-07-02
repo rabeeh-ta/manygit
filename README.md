@@ -108,14 +108,16 @@ line reports success or the failing exit when it finishes.
 
 ## Settings & themes (`?`)
 
-Press `?` for the settings + help overlay. The top section is editable: `j`/`k`
-move between rows, `h`/`l` change the highlighted setting (applied live), and
-`enter` on the editor row lets you type a new command. Changes are saved to
-`~/.config/manygit/config.yml`.
+Press `?` for the Settings screen — a radio list you drive with `j`/`k` and
+`enter`:
 
-- **theme** — `h`/`l` cycles the color theme (applied instantly).
-- **glyphs** — unicode (`↑↓`) or ascii (`+/-`) ahead/behind markers.
-- **editor** — the command `o` opens a repo with.
+- **theme** — every theme is its own row; moving the cursor onto one **previews
+  it live**, `enter` selects it. `esc` without selecting reverts to the current one.
+- **glyphs** — pick unicode (`↑↓`) or ascii (`+/-`) ahead/behind markers.
+- **editor** — `enter` opens an inline field to type the command `o` opens a repo with.
+
+Selections are saved to `~/.config/manygit/config.yml`. Press `tab` to flip to
+the keybindings + status-legend reference, and `esc` to close.
 
 Themes recolor the "chrome" (borders, cursor, titles, group headers, dividers)
 and the error color; the status colors (green ok, yellow ahead, cyan behind,
