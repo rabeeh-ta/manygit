@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"manygit/internal/harness"
 )
@@ -134,45 +135,70 @@ func (m Model) harnessLabel() string {
 	}
 }
 
-// agentView renders the full-screen Agent (7): an instruction prompt, the
-// harness's proposed commands (reviewed before running), and their output.
-func (m Model) agentView() string {
-	b := []string{styleTitle.Render("manygit — agent") + styleDim.Render("   "+m.harnessLabel()), ""}
+// agentBody renders the Agent (7) bottom-slot view: an instruction prompt, the
+// harness's proposed commands (reviewed before running), and their output. The
+// pane is small — press z to zoom it; number keys navigate away (it only traps
+// keys while you're actually composing an instruction).
+func (m Model) agentBody(contentW, innerH int) string {
+	var b []string
 	switch m.agentPhase {
 	case agentPhaseInput:
-		b = append(b,
-			styleGroup.Render("Instruction")+styleDim.Render("   (a git action across your repos)"),
-			"",
-			"  > "+m.agentInputBuf+"_")
-		if m.agentErr != "" {
-			b = append(b, "", styleRed.Render("  "+m.agentErr))
-		}
-		b = append(b, "", styleDim.Render("  enter: ask "+m.cfg.Harness+"     esc: close"))
-	case agentPhaseThinking:
-		b = append(b, styleDim.Render("  asking "+m.cfg.Harness+" ..."))
-	case agentPhaseProposed:
-		b = append(b, styleGroup.Render("Proposed commands")+styleDim.Render("   (review before running)"), "")
-		for _, c := range m.agentCommands {
-			if isNote(c) {
-				b = append(b, "  "+styleYellow.Render(c))
-			} else {
-				b = append(b, "  "+styleGreen.Render(c))
+		if m.agentTyping {
+			b = append(b, styleGroup.Render("Instruction")+styleDim.Render("  a git action across your repos"))
+			b = append(b, "> "+m.agentInputBuf+"_")
+		} else {
+			b = append(b, styleGroup.Render("Agent")+styleDim.Render("  "+m.harnessLabel()))
+			if strings.TrimSpace(m.agentInputBuf) != "" {
+				b = append(b, styleDim.Render("draft: ")+m.agentInputBuf)
 			}
 		}
-		b = append(b, "", styleDim.Render("  enter / y: run these     esc / n: discard"))
+		if m.agentErr != "" {
+			b = append(b, styleRed.Render(m.agentErr))
+		}
+	case agentPhaseThinking:
+		b = append(b, styleDim.Render("asking "+m.cfg.Harness+" ..."))
+	case agentPhaseProposed:
+		b = append(b, styleGroup.Render("Proposed commands")+styleDim.Render("  review before running"))
+		for _, c := range m.agentCommands {
+			if isNote(c) {
+				b = append(b, styleYellow.Render(c))
+			} else {
+				b = append(b, styleGreen.Render(c))
+			}
+		}
 	case agentPhaseRunning:
-		b = append(b, styleDim.Render("  running ..."))
+		b = append(b, styleDim.Render("running ..."))
 	case agentPhaseDone:
-		b = append(b, styleGroup.Render("Output"), "")
-		avail := m.height - 8 // title/blank/header/blank + footer chrome
+		b = append(b, styleGroup.Render("Output"))
+		avail := innerH - 2 // leave rows for the header and the hint
 		if avail < 1 {
 			avail = 1
 		}
 		start, end := window(len(m.agentOutput), m.agentOffset, avail)
 		b = append(b, m.agentOutput[start:end]...)
-		b = append(b, "", styleDim.Render("  j/k scroll     enter: new instruction     esc: close"))
 	}
-	return m.overlayBox(strings.Join(b, "\n"))
+	if h := m.agentHint(); h != "" {
+		b = append(b, styleDim.Render(h))
+	}
+	return lipgloss.NewStyle().MaxWidth(contentW).Render(strings.Join(b, "\n"))
+}
+
+// agentHint is the phase-aware key hint shown at the foot of the agent body.
+func (m Model) agentHint() string {
+	switch m.agentPhase {
+	case agentPhaseInput:
+		if m.agentTyping {
+			return "enter: ask   esc: stop"
+		}
+		return "enter: type   z: zoom"
+	case agentPhaseThinking:
+		return "esc: cancel"
+	case agentPhaseProposed:
+		return "y: run   n: discard"
+	case agentPhaseDone:
+		return "j/k: scroll   enter: new   esc: clear"
+	}
+	return ""
 }
 
 // agentExecCmd runs the confirmed commands in sequence, capturing combined

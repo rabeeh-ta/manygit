@@ -159,7 +159,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case agentProposedMsg:
-		if m.showAgent && m.agentPhase == agentPhaseThinking {
+		// Phase-gated (not view-gated): the reply is accepted even if you've
+		// navigated to another bottom view, but dropped if the request was
+		// cancelled (esc reset the phase off thinking).
+		if m.agentPhase == agentPhaseThinking {
 			if msg.err != nil {
 				m.agentErr = msg.err.Error()
 				m.agentPhase = agentPhaseInput
@@ -173,7 +176,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case agentExecutedMsg:
-		if m.showAgent && m.agentPhase == agentPhaseRunning {
+		if m.agentPhase == agentPhaseRunning {
 			m.agentOutput = msg.output
 			m.agentOffset = 0
 			m.agentPhase = agentPhaseDone
@@ -257,8 +260,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
 		return m.handleSettingsKey(msg)
 	}
-	if m.showAgent {
-		return m.handleAgentKey(msg)
+	// Agent bottom slot (7): while composing an instruction the pane is modal and
+	// captures text; otherwise it's a normal navigable view and only its action
+	// keys are intercepted, so 1-7/z/g still switch panes.
+	if m.focus == panelBottom && m.bottomView == bvAgent && !m.showGraph {
+		if m.agentTyping {
+			return m.handleAgentTypingKey(msg)
+		}
+		if mm, cmd, handled := m.handleAgentNavKey(msg); handled {
+			return mm, cmd
+		}
 	}
 	if m.showGraph {
 		switch msg.String() {
@@ -310,14 +321,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = panelBottom
 		m.bottomView = bvOutput
 	case "7":
-		// Full-screen AI agent (one-shot command helper over the workspace).
-		m.showAgent = true
-		m.agentPhase = agentPhaseInput
-		m.agentInputBuf = ""
-		m.agentCommands = nil
-		m.agentOutput = nil
-		m.agentOffset = 0
-		m.agentErr = ""
+		// AI agent (one-shot command helper), the 4th bottom-slot view. Flipping
+		// to it keeps any in-progress state, just like Graph/Changes/Output.
+		m.focus = panelBottom
+		m.bottomView = bvAgent
 	case "tab":
 		m.focus = (m.focus + 1) % panelCount
 	case "down", "j":
@@ -597,56 +604,66 @@ func (m Model) saveConfig() {
 	_ = config.Save(m.cfg, "")
 }
 
-// handleAgentKey drives the Agent (7) one-shot flow: type an instruction → enter
-// asks the harness → review the proposed commands → enter/y runs them (esc/n
-// discards) → the output shows; esc closes the agent.
-func (m Model) handleAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.Type == tea.KeyCtrlC {
+// handleAgentTypingKey captures text while composing an instruction (insert
+// mode). esc drops back to nav mode keeping the buffer; enter asks the harness.
+func (m Model) handleAgentTypingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyCtrlC:
 		return m, tea.Quit
+	case tea.KeyEsc:
+		m.agentTyping = false // stop composing; stay on the agent view (keep text)
+	case tea.KeyEnter:
+		if strings.TrimSpace(m.agentInputBuf) == "" {
+			return m, nil
+		}
+		h, ok := harness.ByName(m.cfg.Harness)
+		if !ok || !h.Installed() {
+			m.agentErr = "no AI harness installed — pick one in ? settings"
+			m.agentTyping = false
+			return m, nil
+		}
+		m.agentErr = ""
+		m.agentTyping = false
+		m.agentPhase = agentPhaseThinking
+		return m, agentRunCmd(h, m.harnessDir(), m.agentPrompt(m.agentInputBuf))
+	case tea.KeyBackspace:
+		if len(m.agentInputBuf) > 0 {
+			m.agentInputBuf = m.agentInputBuf[:len(m.agentInputBuf)-1]
+		}
+	case tea.KeyRunes, tea.KeySpace:
+		m.agentInputBuf += string(msg.Runes)
 	}
+	return m, nil
+}
+
+// handleAgentNavKey handles the agent view's action keys while NOT composing, so
+// pane-navigation keys (1-7/z/g) still fall through to the main switch. It
+// returns handled=false for any key it doesn't own.
+func (m Model) handleAgentNavKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	switch m.agentPhase {
 	case agentPhaseInput:
-		switch msg.Type {
-		case tea.KeyEsc:
-			m.showAgent = false
-		case tea.KeyEnter:
-			if strings.TrimSpace(m.agentInputBuf) == "" {
-				return m, nil
-			}
-			h, ok := harness.ByName(m.cfg.Harness)
-			if !ok || !h.Installed() {
-				m.agentErr = "no AI harness installed — pick one in ? settings"
-				return m, nil
-			}
-			m.agentErr = ""
-			m.agentPhase = agentPhaseThinking
-			return m, agentRunCmd(h, m.harnessDir(), m.agentPrompt(m.agentInputBuf))
-		case tea.KeyBackspace:
-			if len(m.agentInputBuf) > 0 {
-				m.agentInputBuf = m.agentInputBuf[:len(m.agentInputBuf)-1]
-			}
-		case tea.KeyRunes, tea.KeySpace:
-			m.agentInputBuf += string(msg.Runes)
+		switch msg.String() {
+		case "enter", "i":
+			m.agentTyping = true // start composing an instruction
+			return m, nil, true
 		}
 	case agentPhaseThinking:
-		if msg.Type == tea.KeyEsc {
-			// Cancel the wait AND reset the phase, so a late reply is dropped even
-			// if the user re-enters the agent (guard needs phase==thinking).
+		if msg.String() == "esc" {
+			// Cancel: reset the phase so a late harness reply is dropped.
 			m.agentPhase = agentPhaseInput
 			m.agentErr = ""
-			m.showAgent = false
+			return m, nil, true
 		}
 	case agentPhaseProposed:
 		switch msg.String() {
 		case "enter", "y":
 			m.agentPhase = agentPhaseRunning
-			return m, agentExecCmd(m.agentCommands)
+			return m, agentExecCmd(m.agentCommands), true
 		case "esc", "n":
 			m.agentPhase = agentPhaseInput // discard, back to the instruction
 			m.agentCommands = nil
+			return m, nil, true
 		}
-	case agentPhaseRunning:
-		// keys ignored while the commands run
 	case agentPhaseDone:
 		switch msg.String() {
 		case "enter":
@@ -655,15 +672,22 @@ func (m Model) handleAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.agentCommands = nil
 			m.agentOutput = nil
 			m.agentOffset = 0
+			return m, nil, true
 		case "esc":
-			m.showAgent = false
+			m.agentPhase = agentPhaseInput // clear the output, back to the prompt
+			m.agentInputBuf = ""
+			m.agentOutput = nil
+			m.agentOffset = 0
+			return m, nil, true
 		case "down", "j":
 			m.agentOffset = clampInt(m.agentOffset+1, 0, max(0, len(m.agentOutput)-1))
+			return m, nil, true
 		case "up", "k":
 			m.agentOffset = clampInt(m.agentOffset-1, 0, max(0, len(m.agentOutput)-1))
+			return m, nil, true
 		}
 	}
-	return m, nil
+	return m, nil, false
 }
 
 func baseName(p string) string { return filepath.Base(p) }

@@ -28,6 +28,7 @@ const (
 	bvGraph   bottomView = iota // key 4
 	bvChanges                   // key 5
 	bvOutput                    // key 6
+	bvAgent                     // key 7
 )
 
 // repoVM is the per-repo view model.
@@ -54,8 +55,11 @@ type Model struct {
 	showGraph       bool  // full-screen commit graph overlay
 	zoomed          bool  // maximize the focused pane to full screen (z)
 
-	// agent (7): full-screen one-shot AI command helper over the whole workspace.
-	showAgent     bool
+	// agent (7): a one-shot AI command helper over the whole workspace, shown in
+	// the bottom slot alongside Graph/Changes/Output. agentTyping is the insert
+	// mode: while false the pane is navigable (1-7/z work like any other view);
+	// pressing enter flips it true to compose an instruction (esc flips it back).
+	agentTyping   bool
 	agentPhase    agentPhase
 	agentInputBuf string
 	agentCommands []string
