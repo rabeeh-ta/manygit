@@ -91,15 +91,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.changeShowDiff = true
 		}
 		return m, nil
-	case scriptDoneMsg:
-		var s string
-		if msg.err != nil {
-			s = styleRed.Render("script " + msg.name + " failed: " + msg.err.Error())
-		} else {
-			s = styleGreen.Render("ran " + msg.name)
+	case scriptOutMsg:
+		stale := msg.run != m.outputRun // a superseded run (user started another script)
+		if msg.done {
+			if stale {
+				return m, nil // superseded run finished draining; drop it silently
+			}
+			m.outputRunning = false
+			var s string
+			if msg.err != nil {
+				s = styleRed.Render("script " + m.outputTitle + " failed: " + msg.err.Error())
+			} else {
+				s = styleGreen.Render("ran " + m.outputTitle)
+			}
+			return m, m.setStatus(s)
 		}
-		exp := m.setStatus(s)
-		return m, exp
+		if !stale {
+			m.appendOutput(msg.line)
+		}
+		// Keep reading even a superseded run so its process drains and exits.
+		return m, readScriptLine(msg.scanner, msg.run)
 	case statusExpireMsg:
 		if msg.gen == m.statusGen {
 			m.statusLine = ""
@@ -138,19 +149,23 @@ func (m Model) loadChangesCmd() tea.Cmd {
 	return changesCmd(r.repo.Path, m.selectedRef())
 }
 
-// runScriptCmd suspends the TUI, runs the highlighted script with `bash`
-// attached to the terminal (so its output is visible and it can be Ctrl-C'd),
-// then resumes the TUI when it exits.
+// runScriptCmd starts the highlighted script in the background, streaming its
+// combined output into the Output view (6). nil if no script is selected.
 func (m Model) runScriptCmd() tea.Cmd {
 	if m.scriptCursor < 0 || m.scriptCursor >= len(m.scripts) {
 		return nil
 	}
-	s := m.scripts[m.scriptCursor]
-	c := exec.Command("bash", s.Path)
-	c.Dir = filepath.Dir(s.Path)
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return scriptDoneMsg{name: s.Name, err: err}
-	})
+	return startScriptCmd(m.scripts[m.scriptCursor].Path, m.outputRun)
+}
+
+// appendOutput adds a line to the Output view, keeping the view pinned to the
+// tail (auto-follow) unless the user has scrolled up.
+func (m *Model) appendOutput(line string) {
+	atBottom := m.outputOffset >= len(m.outputLines)-1
+	m.outputLines = append(m.outputLines, line)
+	if atBottom {
+		m.outputOffset = len(m.outputLines) - 1
+	}
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -285,6 +300,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		switch m.focus {
 		case panelScripts:
+			if m.scriptCursor < 0 || m.scriptCursor >= len(m.scripts) {
+				return m, nil
+			}
+			// Run in the background and surface its live output in view 6.
+			m.outputRun++ // supersede any still-streaming previous run
+			m.outputTitle = m.scripts[m.scriptCursor].Name
+			m.outputLines = nil
+			m.outputOffset = 0
+			m.outputRunning = true
+			m.focus = panelBottom
+			m.bottomView = bvOutput
 			return m, m.runScriptCmd()
 		case panelRepos:
 			// Jump into the highlighted repo's branches.

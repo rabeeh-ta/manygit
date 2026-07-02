@@ -1,6 +1,11 @@
 package tui
 
 import (
+	"bufio"
+	"io"
+	"os/exec"
+	"path/filepath"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"manygit/internal/git"
@@ -75,6 +80,40 @@ func diffCmd(path, ref, file string) tea.Cmd {
 			lines, err = git.CommitFileDiff(path, ref, file)
 		}
 		return diffMsg{path: path, ref: ref, lines: lines, err: err}
+	}
+}
+
+// startScriptCmd runs a script with `bash` in the background (non-interactive),
+// merging stdout+stderr into one pipe and reading the first line. The process's
+// exit status is delivered to the reader via CloseWithError, so a non-zero exit
+// surfaces as scanner.Err() at EOF (no shared state, no race).
+func startScriptCmd(path string, run int) tea.Cmd {
+	return func() tea.Msg {
+		c := exec.Command("bash", path)
+		c.Dir = filepath.Dir(path)
+		pr, pw := io.Pipe()
+		c.Stdout, c.Stderr = pw, pw
+		if err := c.Start(); err != nil {
+			return scriptOutMsg{run: run, done: true, err: err}
+		}
+		// Deliver the exit status to the reader: a non-zero exit surfaces as
+		// scanner.Err() at EOF. If the TUI quits mid-stream this goroutine is
+		// abandoned, but the child then gets SIGPIPE on its next write and exits.
+		go func() { pw.CloseWithError(c.Wait()) }()
+		sc := bufio.NewScanner(pr)
+		sc.Buffer(make([]byte, 0, 64*1024), 1<<20) // tolerate long lines (1 MiB)
+		return readScriptLine(sc, run)()
+	}
+}
+
+// readScriptLine reads the next line from a running script, re-issued after each
+// scriptOutMsg to drive the stream until EOF.
+func readScriptLine(sc *bufio.Scanner, run int) tea.Cmd {
+	return func() tea.Msg {
+		if sc.Scan() {
+			return scriptOutMsg{run: run, scanner: sc, line: sc.Text()}
+		}
+		return scriptOutMsg{run: run, scanner: sc, done: true, err: sc.Err()}
 	}
 }
 

@@ -80,16 +80,21 @@ The bottom-right slot is a multi-view panel switched with number keys:
 - **`5` Changes** — the changed files of the selected graph entry: the working
   tree (when WIP is selected) or a commit's files. `j`/`k` pick a file; `enter`
   opens its colored diff in-place; `esc` returns to the list.
-- **`6` Output** — captured output of the last script run (not yet wired; script runs currently open in the terminal — see Scripts panel).
+- **`6` Output** — the live combined stdout+stderr of the last script run. Running
+  a script (from the Scripts panel) flips the bottom slot here and streams output
+  as it arrives, auto-following the tail; `j`/`k` scroll up to stop following. The
+  panel title shows the script name and `(running)` until it exits; the status
+  line reports success or the failing exit.
 
 ## Scripts panel
 
-The `[4] Scripts` panel (below Repos) lists `*.sh` files found near the root —
+The `[2] Scripts` panel (below Repos) lists `*.sh` files found near the root —
 root-level and one directory deep (e.g. `scripts/*.sh`), pruning
-`node_modules`/`.git`/etc. Focus it with `4`, move with `j`/`k`, and press
-`space` to **run** the highlighted script: manygit suspends, runs it with
-`bash` attached to your terminal (so you see its output and can `Ctrl-C` it),
-and resumes when it exits. The result shows in the status line.
+`node_modules`/`.git`/etc. Focus it with `2`, move with `j`/`k`, and press
+`space` to **run** the highlighted script: manygit runs it with `bash` in the
+background (non-interactive) and streams its combined output into the **Output**
+view (`6`), which the bottom slot switches to automatically. The status line
+reports success or the failing exit when it finishes.
 
 ## Config (optional)
 

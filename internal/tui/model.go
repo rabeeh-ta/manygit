@@ -66,11 +66,12 @@ type Model struct {
 	changeDiff     []string
 	changeDiffOff  int
 
-	// output view (6): captured stdout+stderr of the last script run (Phase 2).
+	// output view (6): live stdout+stderr of the last script run.
 	outputLines   []string
 	outputTitle   string
 	outputOffset  int
 	outputRunning bool
+	outputRun     int // bumped per run; stale msgs from a superseded run are dropped
 
 	branches     []git.Branch
 	branchCursor int

@@ -299,9 +299,12 @@ func (m Model) renderChangesView(contentW, innerH int) string {
 	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
 }
 
-// renderOutputView shows captured script output (Phase 2).
+// renderOutputView shows the live combined output of the last script run.
 func (m Model) renderOutputView(contentW, innerH int) string {
 	if len(m.outputLines) == 0 {
+		if m.outputRunning {
+			return styleDim.Render("(running " + m.outputTitle + "...)")
+		}
 		return styleDim.Render("(run a script from [2] Scripts to see its output here)")
 	}
 	start, end := window(len(m.outputLines), m.outputOffset, innerH)
@@ -480,6 +483,12 @@ func (m Model) View() string {
 		bnum, btitle = 5, "Changes"
 	case bvOutput:
 		bnum, btitle = 6, "Output"
+		if m.outputTitle != "" {
+			btitle = "Output: " + m.outputTitle
+			if m.outputRunning {
+				btitle += " (running)"
+			}
+		}
 	}
 	bottom := titledPanel(bnum, btitle, d.rightW, botInner, m.focus == panelBottom,
 		clampLines(m.renderBottom(d.rightW-2, botInner), botInner))

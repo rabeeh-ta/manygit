@@ -1,6 +1,10 @@
 package tui
 
-import "manygit/internal/git"
+import (
+	"bufio"
+
+	"manygit/internal/git"
+)
 
 type statusMsg struct {
 	path string
@@ -53,9 +57,15 @@ type checkoutDoneMsg struct {
 	err    error
 }
 
-type scriptDoneMsg struct {
-	name string
-	err  error
+// scriptOutMsg carries one live line of a running script's combined stdout+stderr.
+// done=true signals EOF; err is then the script's non-zero exit (or a read error),
+// nil on clean exit. scanner is the shared reader the next read resumes from.
+type scriptOutMsg struct {
+	run     int // the run this line belongs to (Model.outputRun at start)
+	scanner *bufio.Scanner
+	line    string
+	done    bool
+	err     error
 }
 
 // statusExpireMsg clears the status line if gen still matches the latest set.
