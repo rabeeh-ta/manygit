@@ -216,22 +216,38 @@ func currentBranch(st git.RepoStatus) string {
 	return st.Branch
 }
 
-// fitNameBranch fits "name (branch)" into the name column of width w. The name
-// keeps priority; the branch is truncated to whatever room remains, or dropped
-// (returned "") when there isn't room for even a short one.
-func fitNameBranch(name, branch string, w int) (string, string) {
-	if branch == "" {
-		return truncate(name, w), ""
+// fitNameParens fits "name (p0) (p1) …" into the name column of width w. The
+// name keeps priority; each parenthetical (branch, then optionally the tag) is
+// added in order while it fits. The first — the branch — is truncated to fill
+// leftover room rather than dropped, preserving the old name/branch behavior;
+// later parts are dropped whole once room runs out.
+func fitNameParens(name string, parens []string, w int) (string, []string) {
+	var parts []string
+	for _, p := range parens {
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	if lipgloss.Width(name) > w {
+		return truncate(name, w), nil
 	}
 	const wrap = 3 // " (" + ")"
-	nameW := lipgloss.Width(name)
-	if nameW+wrap+lipgloss.Width(branch) <= w {
-		return name, branch
+	used := lipgloss.Width(name)
+	var fit []string
+	for i, p := range parts {
+		if used+wrap+lipgloss.Width(p) <= w {
+			fit = append(fit, p)
+			used += wrap + lipgloss.Width(p)
+			continue
+		}
+		if i == 0 { // truncate the branch to whatever room is left
+			if avail := w - used - wrap; avail >= 3 {
+				fit = append(fit, truncate(p, avail))
+			}
+		}
+		break
 	}
-	if avail := w - nameW - wrap; avail >= 3 {
-		return name, truncate(branch, avail)
-	}
-	return truncate(name, w), ""
+	return name, fit
 }
 
 // renderRow composes one repo row from fixed-width, ANSI-aware cells so wide
@@ -249,11 +265,16 @@ func (m Model) renderRow(idx int, r *repoVM, nameW int) string {
 			cursor = styleDim.Render("> ")
 		}
 	}
-	// name, then the current branch in dim parens, both fit within the name column.
-	name, branch := fitNameBranch(r.repo.Name, currentBranch(r.status), nameW)
+	// name, then the current branch in dim parens (and the latest tag too when
+	// showTagsInline is on), all fit within the name column.
+	parens := []string{currentBranch(r.status)}
+	if m.showTagsInline && r.latestTag != "" {
+		parens = append(parens, r.latestTag)
+	}
+	name, fit := fitNameParens(r.repo.Name, parens, nameW)
 	content := nameFg.Render(name)
-	if branch != "" {
-		content += styleDim.Render(" (" + branch + ")")
+	for _, p := range fit {
+		content += styleDim.Render(" (" + p + ")")
 	}
 	nameCell := lipgloss.NewStyle().Width(nameW).Render(content)
 	dirtyCell := lipgloss.NewStyle().Width(wDirty).Render(dirtyBadge(r.status))
@@ -672,7 +693,7 @@ func (m Model) keysBody() string {
 		kr("j/k", "move in the focused panel"),
 		kr("space", "branches / run script / back"),
 		kr("g", "full-screen commit graph"),
-		kr("t", "latest tags of the current repo"),
+		kr("t", "toggle each repo's latest tag inline"),
 		kr("F", "only changed / unsynced repos"),
 		kr("/", "filter the focused list"),
 		"",
@@ -762,58 +783,9 @@ func (m Model) graphView() string {
 	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
 }
 
-// tagsView renders a full-screen list of the highlighted repo's latest tags,
-// newest first, with j/k scrolling.
-func (m Model) tagsView() string {
-	tw, th := m.width, m.height
-	if tw <= 0 {
-		tw = minTermW
-	}
-	if th <= 0 {
-		th = minTermH
-	}
-	innerH := th - 2 // border rows
-	if innerH < 3 {
-		innerH = 3
-	}
-	var content string
-	switch {
-	case m.tags == nil:
-		content = styleDim.Render("(loading tags…)")
-	case len(m.tags) == 0:
-		content = styleDim.Render("(no tags in " + m.tagsRepo + ")")
-	default:
-		lines := make([]string, len(m.tags))
-		for i, t := range m.tags {
-			meta := "  " + t.Hash + "  " + t.Date
-			if t.Subject != "" {
-				meta += "  " + t.Subject
-			}
-			lines[i] = styleYellow.Render(t.Name) + styleDim.Render(meta)
-		}
-		start := m.tagsOffset
-		if start > len(lines)-1 {
-			start = len(lines) - 1
-		}
-		if start < 0 {
-			start = 0
-		}
-		end := start + innerH
-		if end > len(lines) {
-			end = len(lines)
-		}
-		content = lipgloss.NewStyle().MaxWidth(tw - 4).Render(strings.Join(lines[start:end], "\n"))
-	}
-	box := titledBox("Tags: "+m.tagsRepo+"  (j/k scroll, esc close)", tw-2, innerH, true, content)
-	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
-}
-
 func (m Model) View() string {
 	if m.showGraph {
 		return m.graphView()
-	}
-	if m.showTags {
-		return m.tagsView()
 	}
 	if m.showHelp {
 		return m.helpView()
@@ -821,7 +793,7 @@ func (m Model) View() string {
 	if m.zoomed {
 		return m.zoomedView()
 	}
-	d := computeDims(m.width, m.height)
+	d := computeDims(m.width, m.height, m.showTagsInline)
 	tw := m.width
 	if tw <= 0 {
 		tw = minTermW

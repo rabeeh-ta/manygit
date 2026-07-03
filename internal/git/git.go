@@ -178,6 +178,16 @@ type Tag struct {
 	Subject string // annotation message, or the commit subject for lightweight tags
 }
 
+// LatestTag returns the repo's most recent tag name (newest by creation date),
+// or "" if it has no tags.
+func LatestTag(dir string) (string, error) {
+	tags, err := Tags(dir, 1)
+	if err != nil || len(tags) == 0 {
+		return "", err
+	}
+	return tags[0].Name, nil
+}
+
 // Tags returns up to n of the repo's most recent tags, newest first (by tag
 // creation date, falling back to the commit date for lightweight tags).
 func Tags(dir string, n int) ([]Tag, error) {

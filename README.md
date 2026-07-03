@@ -49,7 +49,7 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `d` / `D` | discard changes (confirm): `d` tracked only · `D` also deletes untracked files |
 | `f` / `r` | fetch one / refetch all |
 | `g` | full-screen commit graph |
-| `t` | full-screen list of the repo's latest tags (toggle) |
+| `t` | toggle each repo's latest tag inline, after the branch (off by default) |
 | `F` | show only repos with changes / ahead / behind |
 | `/` | filter the focused list by name |
 | `o` | open the repo in your editor |

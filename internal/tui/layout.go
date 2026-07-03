@@ -19,7 +19,9 @@ const (
 )
 
 // computeDims splits the terminal so (leftW+2) + gutter + (rightW+2) == width.
-func computeDims(width, height int) dims {
+// wideNames gives the Repos column a bigger share so the inline latest-tag (t)
+// has room after the branch.
+func computeDims(width, height int, wideNames bool) dims {
 	if width < minTermW {
 		width = minTermW
 	}
@@ -27,7 +29,11 @@ func computeDims(width, height int) dims {
 		height = minTermH
 	}
 	usable := width - gutter - 2*borderPad
-	leftW := usable * 38 / 100
+	leftPct := 38
+	if wideNames {
+		leftPct = 50
+	}
+	leftW := usable * leftPct / 100
 	if leftW < 30 {
 		leftW = 30
 	}

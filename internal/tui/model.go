@@ -33,10 +33,11 @@ const (
 
 // repoVM is the per-repo view model.
 type repoVM struct {
-	repo     discover.Repo
-	status   git.RepoStatus
-	loaded   bool
-	fetching bool
+	repo      discover.Repo
+	status    git.RepoStatus
+	loaded    bool
+	fetching  bool
+	latestTag string // most recent tag, shown inline when showTagsInline is on
 }
 
 // Model is the Bubble Tea model.
@@ -53,13 +54,8 @@ type Model struct {
 	filterAttention bool  // show only repos with changes / ahead / behind
 	showHelp        bool  // the settings + help overlay
 	showGraph       bool  // full-screen commit graph overlay
-	showTags        bool  // full-screen latest-tags overlay (t)
+	showTagsInline  bool  // show each repo's latest tag inline in the Repos rows (t)
 	zoomed          bool  // maximize the focused pane to full screen (z)
-
-	// tags overlay (t): the highlighted repo's latest tags, loaded on open.
-	tags       []git.Tag
-	tagsOffset int
-	tagsRepo   string // name of the repo the tags were loaded for (overlay title)
 
 	// agent (7): a one-shot AI command helper over the whole workspace, shown in
 	// the bottom slot alongside Graph/Changes/Output. agentTyping is the insert

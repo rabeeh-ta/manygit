@@ -34,9 +34,9 @@ type discardDoneMsg struct {
 	err  error
 }
 
-type tagsMsg struct {
+type latestTagMsg struct {
 	path string
-	tags []git.Tag
+	tag  string
 	err  error
 }
 

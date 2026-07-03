@@ -119,10 +119,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case tagsMsg:
-		if m.showTags {
-			m.tags = msg.tags
-			m.tagsOffset = 0
+	case latestTagMsg:
+		for _, r := range m.repos {
+			if r.repo.Path == msg.path {
+				r.latestTag = msg.tag
+				break
+			}
 		}
 		return m, nil
 	case graphMsg:
@@ -204,6 +206,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 	return m, nil
+}
+
+// loadTagsCmd loads the latest tag for every repo (fast local reads, ungated).
+func (m Model) loadTagsCmd() tea.Cmd {
+	cmds := make([]tea.Cmd, 0, len(m.repos))
+	for _, r := range m.repos {
+		cmds = append(cmds, latestTagCmd(r.repo.Path))
+	}
+	return tea.Batch(cmds...)
 }
 
 // loadContextCmd loads branches + the commit graph for the highlighted repo
@@ -322,23 +333,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.showTags {
-		switch msg.String() {
-		case "q", "ctrl+c":
-			return m, tea.Quit
-		case "t", "esc":
-			m.showTags = false
-		case "down", "j":
-			if m.tagsOffset < len(m.tags)-1 {
-				m.tagsOffset++
-			}
-		case "up", "k":
-			if m.tagsOffset > 0 {
-				m.tagsOffset--
-			}
-		}
-		return m, nil
-	}
 	vis := m.visibleRepos()
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -355,14 +349,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showGraph = true
 		m.graphOffset = 0
 	case "t":
-		// Full-screen list of the highlighted repo's latest tags (toggle; t/esc
-		// closes via the overlay handler above). Loaded fresh on open.
-		if r := m.currentVisible(vis); r != nil {
-			m.showTags = true
-			m.tagsOffset = 0
-			m.tags = nil
-			m.tagsRepo = r.repo.Name
-			return m, tagsCmd(r.repo.Path)
+		// Toggle each repo's latest tag inline in the Repos rows (after the
+		// branch). Off by default; loading the tags happens when switched on.
+		m.showTagsInline = !m.showTagsInline
+		if m.showTagsInline {
+			return m, m.loadTagsCmd()
 		}
 	case "1":
 		m.focus = panelRepos

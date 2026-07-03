@@ -53,10 +53,10 @@ func discardCmd(sem chan struct{}, path string, full bool) tea.Cmd {
 	})
 }
 
-func tagsCmd(path string) tea.Cmd {
+func latestTagCmd(path string) tea.Cmd {
 	return func() tea.Msg {
-		tags, err := git.Tags(path, 50)
-		return tagsMsg{path: path, tags: tags, err: err}
+		tag, err := git.LatestTag(path)
+		return latestTagMsg{path: path, tag: tag, err: err}
 	}
 }
 

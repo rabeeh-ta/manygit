@@ -250,7 +250,7 @@ func TestTUI_GraphRefsShortened(t *testing.T) {
 func TestTUI_RepoRowShowsBranch(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 120, 30)
-	d := computeDims(120, 30)
+	d := computeDims(120, 30, false)
 	m.repos[0].status = git.RepoStatus{Branch: "main"}
 	m.repos[1].status = git.RepoStatus{Branch: "feature/really-long-branch-that-overflows-the-column"}
 
@@ -482,7 +482,7 @@ func TestTUI_ReposScroll(t *testing.T) {
 	}
 	m := New(config.Default(), repos, nil)
 	m.width, m.height = 100, 20
-	d := computeDims(100, 20)
+	d := computeDims(100, 20, false)
 
 	m.cursor = 18 // deep in the list
 	body := stripANSI(m.renderRepoBody(d, 6))
@@ -550,36 +550,50 @@ func drainCmd(c tea.Cmd) []tea.Msg {
 	}
 }
 
-// t toggles a full-screen tags overlay for the highlighted repo, loading its
-// tags; t (or esc) again closes it.
-func TestTUI_TagsToggle(t *testing.T) {
+// t toggles showing each repo's latest tag inline in the Repos rows: off by
+// default, on loads the tags, and the tag renders after the branch.
+func TestTUI_TagsInlineToggle(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	if m.showTagsInline {
+		t.Fatal("inline tags should be off by default")
+	}
 
+	// t turns it on and dispatches a load for every repo
 	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
 	m = mm.(Model)
-	if !m.showTags {
-		t.Fatal("t should open the tags overlay")
+	if !m.showTagsInline {
+		t.Fatal("t should turn on inline tags")
 	}
-	if m.tagsRepo != m.repos[0].repo.Name {
-		t.Errorf("tags overlay should be for the current repo, got %q", m.tagsRepo)
+	loads := 0
+	for _, msg := range drainCmd(cmd) {
+		if _, ok := msg.(latestTagMsg); ok {
+			loads++
+		}
 	}
-	if cmd == nil {
-		t.Error("opening tags should dispatch a load command")
+	if loads != len(m.repos) {
+		t.Errorf("expected a tag load per repo (%d), got %d", len(m.repos), loads)
 	}
 
-	// a tags message populates the list
-	mm, _ = m.Update(tagsMsg{path: m.repos[0].repo.Path, tags: []git.Tag{{Name: "v1.0.0", Hash: "abc1234", Date: "2026-01-01"}}})
+	// a latestTagMsg populates that repo's tag, and it renders after the branch
+	mm, _ = m.Update(latestTagMsg{path: m.repos[0].repo.Path, tag: "v1.2.3"})
 	m = mm.(Model)
-	if len(m.tags) != 1 || m.tags[0].Name != "v1.0.0" {
-		t.Errorf("tags not populated: %+v", m.tags)
+	if m.repos[0].latestTag != "v1.2.3" {
+		t.Errorf("latestTag not stored: %q", m.repos[0].latestTag)
+	}
+	d := computeDims(100, 30, true)
+	if body := stripANSI(m.renderRepoBody(d, 30)); !strings.Contains(body, "(v1.2.3)") {
+		t.Errorf("the tag should render inline:\n%s", body)
 	}
 
-	// t again toggles it closed
+	// t again turns it off (and the tag no longer renders)
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
 	m = mm.(Model)
-	if m.showTags {
-		t.Error("t should toggle the tags overlay closed")
+	if m.showTagsInline {
+		t.Error("t should toggle inline tags off")
+	}
+	if body := stripANSI(m.renderRepoBody(d, 30)); strings.Contains(body, "(v1.2.3)") {
+		t.Error("the tag should not render when inline tags are off")
 	}
 }
 
@@ -838,7 +852,7 @@ func TestTUI_RepoRowsFitPanelContent(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	for _, w := range []int{80, 81, 82, 83, 100, 160, 200} {
 		m := loadAll(t, New(cfg, repos, nil), w, 30)
-		d := computeDims(w, 30)
+		d := computeDims(w, 30, false)
 		content := d.leftW - 2 // panelStyle Padding(0,1) → content area is leftW-2
 		for _, line := range strings.Split(m.renderRepoBody(d, 30), "\n") {
 			if line == "" {
@@ -920,7 +934,7 @@ func TestTUI_PanelLinesFitContentWidth(t *testing.T) {
 	m.branches = []git.Branch{{Name: strings.Repeat("b", 300)}}
 	m.graphLines = []string{strings.Repeat("x", 300)}
 	m.changeFiles = []git.FileChange{{Status: "M", Path: strings.Repeat("p", 300)}}
-	content := computeDims(100, 30).rightW - 2
+	content := computeDims(100, 30, false).rightW - 2
 	blocks := []string{
 		m.renderBranches(content, 10),
 		m.renderGraphView(content, 10),
