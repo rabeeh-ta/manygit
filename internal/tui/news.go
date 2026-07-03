@@ -12,7 +12,10 @@ import (
 	"manygit/internal/harness"
 )
 
-const newsRotate = 12 * time.Second // top-bar headline dwell time (slow enough to read)
+const (
+	newsRotate       = 12 * time.Second // top-bar headline dwell time (slow enough to read)
+	newsMaxHeadlines = 10               // hard cap on headlines, in case the harness overshoots
+)
 
 // newsRepo is the minimal per-repo info the news refresh needs (captured up
 // front so the background command doesn't touch the live Model).
@@ -54,13 +57,17 @@ func newsRefreshCmd(h harness.Harness, dir string, repos []newsRepo, days, gen i
 		if !any {
 			return newsFeedMsg{gen: gen}
 		}
-		prompt := fmt.Sprintf(`Below are recent commits on the main branch of several git repositories. Write a "news feed" of the notable activity — new features, fixes, releases. Give one punchy one-line headline (each under ~70 characters) per notable change, covering every repo that has activity. Produce as many headlines as the activity warrants — do NOT cap the number and do not omit anything significant. One headline per line. No numbering, no markdown, no preamble.
+		prompt := fmt.Sprintf(`Below are recent commits on the main branch of several git repositories. Write a "news feed" of the notable activity — new features, fixes, releases. Summarize it into AT MOST 10 punchy headlines (fewer if there's little activity), grouping related commits; each headline up to 15 words. One headline per line. No numbering, no markdown, no preamble.
 
 %s`, b.String())
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 		out, err := h.OneShot(ctx, dir, prompt)
-		return newsFeedMsg{gen: gen, headlines: parseHeadlines(out), err: err}
+		headlines := parseHeadlines(out)
+		if len(headlines) > newsMaxHeadlines {
+			headlines = headlines[:newsMaxHeadlines]
+		}
+		return newsFeedMsg{gen: gen, headlines: headlines, err: err}
 	}
 }
 
