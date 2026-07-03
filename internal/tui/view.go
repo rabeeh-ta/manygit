@@ -497,7 +497,7 @@ func (m Model) footer() string {
 		space = "space run"
 	}
 	return styleDim.Render(
-		space + " | z zoom | 7 agent | g graph | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ? help | q quit")
+		space + " | z zoom | g graph | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ? help | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
