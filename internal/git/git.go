@@ -82,7 +82,10 @@ func RecentCommits(dir, ref string, n int, since string) ([]string, error) {
 	if ref == "" {
 		return nil, nil
 	}
-	args := []string{"log", ref, "-n", strconv.Itoa(n), "--pretty=format:%s"}
+	args := []string{"log", ref, "--pretty=format:%s"}
+	if n > 0 { // n <= 0 means no count limit (bounded only by --since)
+		args = append(args, "-n", strconv.Itoa(n))
+	}
 	if since != "" {
 		args = append(args, "--since="+since)
 	}

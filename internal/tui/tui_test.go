@@ -626,6 +626,37 @@ func TestTUI_TagsInlineToggle(t *testing.T) {
 	}
 }
 
+// n opens a full-screen news overlay listing every headline; j scrolls; n/esc
+// closes.
+func TestTUI_NewsView(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m.newsFeed = []string{"a shipped X", "b fixed Y", "c released v2", "d refactored Z"}
+
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = mm.(Model)
+	if !m.showNews {
+		t.Fatal("n should open the news overlay")
+	}
+	if v := stripANSI(m.View()); !strings.Contains(v, "a shipped X") || !strings.Contains(v, "d refactored Z") {
+		t.Errorf("the news overlay should list every headline:\n%s", v)
+	}
+
+	// j scrolls, k scrolls back, clamped at 0
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = mm.(Model)
+	if m.newsOffset != 1 {
+		t.Errorf("j should scroll the news, offset=%d", m.newsOffset)
+	}
+
+	// esc closes
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = mm.(Model)
+	if m.showNews {
+		t.Error("esc should close the news overlay")
+	}
+}
+
 // d/D arm a discard confirmation on the highlighted repo; nothing runs until y.
 func TestTUI_DiscardConfirm(t *testing.T) {
 	cfg, repos := twoRepos(t)

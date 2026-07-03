@@ -54,6 +54,7 @@ type Model struct {
 	filterAttention bool  // show only repos with changes / ahead / behind
 	showHelp        bool  // the settings + help overlay
 	showGraph       bool  // full-screen commit graph overlay
+	showNews        bool  // full-screen news-feed overlay (n)
 	showTagsInline  bool  // show each repo's latest tag inline in the Repos rows (t)
 	zoomed          bool  // maximize the focused pane to full screen (z)
 
@@ -112,6 +113,7 @@ type Model struct {
 	// refreshed a beat after a fetch burst settles, rotated by a ticker.
 	newsFeed     []string
 	newsIndex    int
+	newsOffset   int // scroll offset for the full-screen news overlay (n)
 	newsGen      int // bumped per refresh; guards stale refreshes/ticks
 	newsDebounce int // bumped on each fetch; the latest debounce tick refreshes
 	newsLoading  bool

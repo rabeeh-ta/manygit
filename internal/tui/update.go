@@ -333,6 +333,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.showNews {
+		switch msg.String() {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		case "n", "esc":
+			m.showNews = false
+		case "down", "j":
+			if m.newsOffset < len(m.newsFeed)-1 {
+				m.newsOffset++
+			}
+		case "up", "k":
+			if m.newsOffset > 0 {
+				m.newsOffset--
+			}
+		}
+		return m, nil
+	}
 	vis := m.visibleRepos()
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -348,6 +365,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Full-screen colored commit graph (reuses the loaded graph).
 		m.showGraph = true
 		m.graphOffset = 0
+	case "n":
+		// Full-screen news feed: every headline at once (toggle; n/esc closes).
+		m.showNews = true
+		m.newsOffset = 0
+		if len(m.newsFeed) == 0 { // nothing yet — kick off a summary if we can
+			return m, m.maybeRefreshNews()
+		}
 	case "t":
 		// Toggle each repo's latest tag inline in the Repos rows (after the
 		// branch). Off by default; loading the tags happens when switched on.

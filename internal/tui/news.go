@@ -12,10 +12,7 @@ import (
 	"manygit/internal/harness"
 )
 
-const (
-	newsCommitsPerRepo = 5
-	newsRotate         = 12 * time.Second // top-bar headline dwell time (slow enough to read)
-)
+const newsRotate = 12 * time.Second // top-bar headline dwell time (slow enough to read)
 
 // newsRepo is the minimal per-repo info the news refresh needs (captured up
 // front so the background command doesn't touch the live Model).
@@ -43,8 +40,8 @@ func newsRefreshCmd(h harness.Harness, dir string, repos []newsRepo, days, gen i
 		var b strings.Builder
 		any := false
 		for _, r := range repos {
-			ref := git.MainRef(r.path) // main/master only, not every branch
-			commits, _ := git.RecentCommits(r.path, ref, newsCommitsPerRepo, since)
+			ref := git.MainRef(r.path)                             // main/master only, not every branch
+			commits, _ := git.RecentCommits(r.path, ref, 0, since) // all in the time window
 			if len(commits) == 0 {
 				continue
 			}
@@ -57,7 +54,7 @@ func newsRefreshCmd(h harness.Harness, dir string, repos []newsRepo, days, gen i
 		if !any {
 			return newsFeedMsg{gen: gen}
 		}
-		prompt := fmt.Sprintf(`Below are recent commits on the main branch of several git repositories. Write a short "news feed" of the notable activity — new features, fixes, releases. 3 to 8 punchy one-line headlines, each under ~70 characters. One headline per line. No numbering, no markdown, no preamble.
+		prompt := fmt.Sprintf(`Below are recent commits on the main branch of several git repositories. Write a "news feed" of the notable activity — new features, fixes, releases. Give one punchy one-line headline (each under ~70 characters) per notable change, covering every repo that has activity. Produce as many headlines as the activity warrants — do NOT cap the number and do not omit anything significant. One headline per line. No numbering, no markdown, no preamble.
 
 %s`, b.String())
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)

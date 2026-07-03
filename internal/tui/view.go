@@ -517,7 +517,7 @@ func (m Model) footer() string {
 		space = "space run"
 	}
 	return styleDim.Render(
-		space + " | z zoom | g graph | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ? help | q quit")
+		space + " | z zoom | g graph | n news | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ? help | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -692,6 +692,7 @@ func (m Model) keysBody() string {
 		kr("j/k", "move in the focused panel"),
 		kr("space", "branches / run script / back"),
 		kr("g", "full-screen commit graph"),
+		kr("n", "full-screen news feed (all headlines)"),
 		kr("t", "toggle each repo's latest tag inline"),
 		kr("F", "only changed / unsynced repos"),
 		kr("/", "filter the focused list"),
@@ -782,9 +783,55 @@ func (m Model) graphView() string {
 	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
 }
 
+// newsView renders the full-screen news feed — every headline at once (the top
+// bar only rotates through one at a time), with j/k scrolling.
+func (m Model) newsView() string {
+	tw, th := m.width, m.height
+	if tw <= 0 {
+		tw = minTermW
+	}
+	if th <= 0 {
+		th = minTermH
+	}
+	innerH := th - 2 // border rows
+	if innerH < 3 {
+		innerH = 3
+	}
+	var content string
+	switch {
+	case len(m.newsFeed) == 0 && m.newsLoading:
+		content = styleDim.Render("(summarizing recent commits…)")
+	case len(m.newsFeed) == 0:
+		content = styleDim.Render(fmt.Sprintf("(no main-branch activity in the last %d days, or no AI harness set)", m.cfg.NewsDays))
+	default:
+		lines := make([]string, len(m.newsFeed))
+		for i, h := range m.newsFeed {
+			lines[i] = styleDim.Render(fmt.Sprintf("%2d ", i+1)) + h
+		}
+		start := m.newsOffset
+		if start > len(lines)-1 {
+			start = len(lines) - 1
+		}
+		if start < 0 {
+			start = 0
+		}
+		end := start + innerH
+		if end > len(lines) {
+			end = len(lines)
+		}
+		content = lipgloss.NewStyle().MaxWidth(tw - 4).Render(strings.Join(lines[start:end], "\n"))
+	}
+	title := fmt.Sprintf("News — %d headlines  (j/k scroll, esc close)", len(m.newsFeed))
+	box := titledBox(title, tw-2, innerH, true, content)
+	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
+}
+
 func (m Model) View() string {
 	if m.showGraph {
 		return m.graphView()
+	}
+	if m.showNews {
+		return m.newsView()
 	}
 	if m.showHelp {
 		return m.helpView()

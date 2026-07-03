@@ -415,6 +415,23 @@ func TestRecentCommits(t *testing.T) {
 	if got, _ := RecentCommits(old, "main", 5, ""); len(got) != 1 {
 		t.Errorf("no window should include the old commit, got %v", got)
 	}
+
+	// n <= 0 means "no count limit" — every commit in the window is returned,
+	// while a positive n still caps the count.
+	multi := initRepo(t) // "init"
+	for _, msg := range []string{"c2", "c3", "c4"} {
+		if err := os.WriteFile(filepath.Join(multi, msg+".txt"), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitCmd(t, multi, "add", ".")
+		gitCmd(t, multi, "commit", "-q", "-m", msg)
+	}
+	if got, _ := RecentCommits(multi, "master", 0, ""); len(got) != 4 {
+		t.Errorf("n=0 should return all 4 commits, got %d: %v", len(got), got)
+	}
+	if got, _ := RecentCommits(multi, "master", 2, ""); len(got) != 2 {
+		t.Errorf("n=2 should still cap at 2 commits, got %d", len(got))
+	}
 }
 
 func TestGraphLog_ReturnsCommits(t *testing.T) {
