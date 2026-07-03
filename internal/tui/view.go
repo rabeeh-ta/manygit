@@ -328,7 +328,7 @@ func (m Model) renderBranches(contentW, innerH int) string {
 	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
 }
 
-// bottomTabs is the tab-bar label for the multi-view bottom slot: the three
+// bottomTabs is the tab-bar label for the multi-view bottom slot: the four
 // views separated by dim "│" dividers, the active one in reverse-video and the
 // rest dim (a "*" on Output while a script runs), so the tabs read as distinct
 // and the inactive views are discoverable.
@@ -868,8 +868,8 @@ func (m Model) View() string {
 	botInner := max((d.bodyH-2)-topInner, 3)
 	branches := titledPanel(3, "Branches", d.rightW, topInner, m.focus == panelBranches,
 		clampLines(m.renderBranches(d.rightW-2, topInner), topInner))
-	// bottom multi-view slot: a tab bar of all three views (active bracketed) so
-	// the 5 Changes / 6 Output views are discoverable, not just the current one.
+	// bottom multi-view slot: a tab bar of all four views (active in reverse-video)
+	// so the other views are discoverable, not just the current one.
 	bottom := titledBarBox(m.bottomTabs()+m.bottomHint(), d.rightW, botInner, m.focus == panelBottom,
 		clampLines(m.renderBottom(d.rightW-2, botInner), botInner))
 	right := lipgloss.JoinVertical(lipgloss.Left, branches, bottom)

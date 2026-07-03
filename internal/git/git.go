@@ -55,7 +55,6 @@ func resolveDefault(dir string) string {
 	return "master"
 }
 
-// Status computes the RepoStatus for the repo at dir.
 // MainRef returns the best ref to read the repo's main-branch history from,
 // preferring the remote default (so freshly-fetched commits show) then the local
 // default: origin/main, origin/master, main, master. "" if none exist.
@@ -99,6 +98,7 @@ func RecentCommits(dir, ref string, n int, since string) ([]string, error) {
 	return strings.Split(out, "\n"), nil
 }
 
+// Status computes the RepoStatus for the repo at dir.
 func Status(dir string) RepoStatus {
 	st := RepoStatus{}
 

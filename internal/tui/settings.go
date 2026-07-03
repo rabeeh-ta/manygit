@@ -27,7 +27,7 @@ type settingRow struct {
 }
 
 // settingRows is the ordered list of selectable rows: every theme, every known
-// harness, the two glyph modes, then the editor.
+// harness, the news-window options, the two glyph modes, then the editor.
 func settingRows() []settingRow {
 	rows := make([]settingRow, 0, len(themeList)+len(harness.All)+len(newsDayOptions)+3)
 	for _, t := range themeList {

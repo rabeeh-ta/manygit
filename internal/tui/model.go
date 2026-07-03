@@ -17,7 +17,7 @@ const (
 	panelRepos    panel = iota // key 1
 	panelScripts               // key 2
 	panelBranches              // key 3
-	panelBottom                // keys 4/5/6 (multi-view: graph / changes / output)
+	panelBottom                // keys 4/5/6/7 (multi-view: graph / changes / output / agent)
 	panelCount                 // number of focusable panels
 )
 
