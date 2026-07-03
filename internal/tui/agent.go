@@ -135,63 +135,82 @@ func (m Model) harnessLabel() string {
 // pane is small — press z to zoom it; number keys navigate away (it only traps
 // keys while you're actually composing an instruction).
 func (m Model) agentBody(contentW, innerH int) string {
-	var b []string
+	var body []string // phase content; indented and spaced at assembly
 	switch m.agentPhase {
 	case agentPhaseInput:
 		if m.agentTyping {
-			b = append(b, styleGroup.Render("Instruction")+styleDim.Render("  a git action across your repos"))
-			b = append(b, "> "+m.agentInputBuf+"_")
+			body = append(body,
+				styleGroup.Render("Instruction")+styleDim.Render("   a git action across your repos"),
+				"",
+				"> "+m.agentInputBuf+"_")
 		} else {
-			b = append(b, styleGroup.Render("Agent")+styleDim.Render("  "+m.harnessLabel()))
+			body = append(body, styleGroup.Render("Agent")+styleDim.Render("   "+m.harnessLabel()))
 			if strings.TrimSpace(m.agentInputBuf) != "" {
-				b = append(b, styleDim.Render("draft: ")+m.agentInputBuf)
+				body = append(body, "", styleDim.Render("draft: ")+m.agentInputBuf)
 			}
 		}
 		if m.agentErr != "" {
-			b = append(b, styleRed.Render(m.agentErr))
+			body = append(body, "", styleRed.Render(m.agentErr))
 		}
 	case agentPhaseThinking:
-		b = append(b, styleDim.Render("asking "+m.cfg.Harness+" ..."))
+		body = append(body, styleDim.Render("asking "+m.cfg.Harness+" ..."))
 	case agentPhaseProposed:
-		b = append(b, styleGroup.Render("Proposed commands")+styleDim.Render("  review before running"))
+		body = append(body, styleGroup.Render("Proposed commands")+styleDim.Render("   review before running"), "")
 		for _, c := range m.agentCommands {
 			if isNote(c) {
-				b = append(b, styleYellow.Render(c))
+				body = append(body, styleYellow.Render(c))
 			} else {
-				b = append(b, styleGreen.Render(c))
+				body = append(body, styleGreen.Render(c))
 			}
 		}
 	case agentPhaseRunning:
-		b = append(b, styleDim.Render("running ..."))
+		body = append(body, styleDim.Render("running ..."))
 	case agentPhaseDone:
-		b = append(b, styleGroup.Render("Output"))
-		avail := innerH - 2 // leave rows for the header and the hint
+		body = append(body, styleGroup.Render("Output"), "")
+		avail := innerH - 4 // top pad, header, blank, bottom hint
 		if avail < 1 {
 			avail = 1
 		}
 		start, end := window(len(m.agentOutput), m.agentOffset, avail)
-		b = append(b, m.agentOutput[start:end]...)
+		body = append(body, m.agentOutput[start:end]...)
 	}
-	if h := m.agentHint(); h != "" {
-		b = append(b, styleDim.Render(h))
+
+	// Assemble with a blank top row and a left indent, then pin the key hint to
+	// the bottom row with the gap in between — so it reads as a footer and the
+	// pane doesn't feel crammed.
+	const pad = "  "
+	lines := make([]string, 0, innerH)
+	lines = append(lines, "")
+	for _, l := range body {
+		if l == "" {
+			lines = append(lines, "")
+		} else {
+			lines = append(lines, pad+l)
+		}
 	}
-	return lipgloss.NewStyle().MaxWidth(contentW).Render(strings.Join(b, "\n"))
+	if hint := m.agentHint(); hint != "" {
+		for len(lines) < innerH-1 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, pad+styleDim.Render(hint))
+	}
+	return lipgloss.NewStyle().MaxWidth(contentW).Render(strings.Join(lines, "\n"))
 }
 
-// agentHint is the phase-aware key hint shown at the foot of the agent body.
+// agentHint is the phase-aware key hint pinned to the foot of the agent pane.
 func (m Model) agentHint() string {
 	switch m.agentPhase {
 	case agentPhaseInput:
 		if m.agentTyping {
-			return "enter: ask   esc: stop"
+			return "enter: send    esc: stop typing"
 		}
-		return "enter: type   z: zoom"
+		return "enter: type an instruction    z: zoom"
 	case agentPhaseThinking:
 		return "esc: cancel"
 	case agentPhaseProposed:
-		return "y: run   n: discard"
+		return "y / enter: run    n / esc: discard"
 	case agentPhaseDone:
-		return "j/k: scroll   enter: new   esc: clear"
+		return "j/k: scroll    enter: new    esc: clear"
 	}
 	return ""
 }
