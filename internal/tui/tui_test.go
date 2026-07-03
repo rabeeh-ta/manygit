@@ -550,6 +550,35 @@ func drainCmd(c tea.Cmd) []tea.Msg {
 	}
 }
 
+func TestFitNameSuffixes(t *testing.T) {
+	cases := []struct {
+		name, branch, tag   string
+		w                   int
+		wantN, wantB, wantT string
+	}{
+		// everything fits
+		{"abc", "main", "v1.2", 30, "abc", "main", "v1.2"},
+		// tag doesn't fit whole → dropped (never truncated), branch kept
+		{"abc", "main", "release-2026.07", 14, "abc", "main", ""},
+		// branch doesn't fit whole → truncated to fill, tag dropped
+		{"abcdefgh", "feature-x", "v1", 16, "abcdefgh", "feat…", ""},
+		// name alone exceeds width → truncated, no suffixes
+		{"verylongname", "main", "v1", 6, "veryl…", "", ""},
+		// EMPTY branch + a long tag must NOT truncate the tag (the reviewed bug):
+		// the tag is dropped whole, never rendered partial.
+		{"abc", "", "release-2026.07.03-rc1", 20, "abc", "", ""},
+		// empty branch + a short tag shows the tag whole
+		{"abc", "", "v1", 20, "abc", "", "v1"},
+	}
+	for _, c := range cases {
+		n, b, tg := fitNameSuffixes(c.name, c.branch, c.tag, c.w)
+		if n != c.wantN || b != c.wantB || tg != c.wantT {
+			t.Errorf("fitNameSuffixes(%q,%q,%q,%d) = (%q,%q,%q), want (%q,%q,%q)",
+				c.name, c.branch, c.tag, c.w, n, b, tg, c.wantN, c.wantB, c.wantT)
+		}
+	}
+}
+
 // t toggles showing each repo's latest tag inline in the Repos rows: off by
 // default, on loads the tags, and the tag renders after the branch.
 func TestTUI_TagsInlineToggle(t *testing.T) {

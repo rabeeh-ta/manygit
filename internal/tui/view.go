@@ -216,38 +216,34 @@ func currentBranch(st git.RepoStatus) string {
 	return st.Branch
 }
 
-// fitNameParens fits "name (p0) (p1) …" into the name column of width w. The
-// name keeps priority; each parenthetical (branch, then optionally the tag) is
-// added in order while it fits. The first — the branch — is truncated to fill
-// leftover room rather than dropped, preserving the old name/branch behavior;
-// later parts are dropped whole once room runs out.
-func fitNameParens(name string, parens []string, w int) (string, []string) {
-	var parts []string
-	for _, p := range parens {
-		if p != "" {
-			parts = append(parts, p)
-		}
-	}
+// fitNameSuffixes fits "name (branch) (tag)" into the name column of width w.
+// The name keeps priority; the branch is truncated to fill whatever room is left
+// (or dropped when there's no room); the tag is shown only if it fits whole (it
+// is never truncated — a partial tag is meaningless), and only when the branch
+// didn't have to be truncated. Any argument may be "".
+func fitNameSuffixes(name, branch, tag string, w int) (outName, outBranch, outTag string) {
 	if lipgloss.Width(name) > w {
-		return truncate(name, w), nil
+		return truncate(name, w), "", ""
 	}
 	const wrap = 3 // " (" + ")"
 	used := lipgloss.Width(name)
-	var fit []string
-	for i, p := range parts {
-		if used+wrap+lipgloss.Width(p) <= w {
-			fit = append(fit, p)
-			used += wrap + lipgloss.Width(p)
-			continue
+	if branch != "" {
+		switch {
+		case used+wrap+lipgloss.Width(branch) <= w:
+			outBranch = branch
+			used += wrap + lipgloss.Width(branch)
+		case w-used-wrap >= 3:
+			// Not enough for the whole branch — truncate it to fill the rest.
+			// Nothing is left for the tag afterward.
+			return name, truncate(branch, w-used-wrap), ""
+		default:
+			return name, "", "" // no room for even a short branch
 		}
-		if i == 0 { // truncate the branch to whatever room is left
-			if avail := w - used - wrap; avail >= 3 {
-				fit = append(fit, truncate(p, avail))
-			}
-		}
-		break
 	}
-	return name, fit
+	if tag != "" && used+wrap+lipgloss.Width(tag) <= w {
+		outTag = tag
+	}
+	return name, outBranch, outTag
 }
 
 // renderRow composes one repo row from fixed-width, ANSI-aware cells so wide
@@ -267,14 +263,17 @@ func (m Model) renderRow(idx int, r *repoVM, nameW int) string {
 	}
 	// name, then the current branch in dim parens (and the latest tag too when
 	// showTagsInline is on), all fit within the name column.
-	parens := []string{currentBranch(r.status)}
-	if m.showTagsInline && r.latestTag != "" {
-		parens = append(parens, r.latestTag)
+	tag := ""
+	if m.showTagsInline {
+		tag = r.latestTag
 	}
-	name, fit := fitNameParens(r.repo.Name, parens, nameW)
+	name, branch, tag := fitNameSuffixes(r.repo.Name, currentBranch(r.status), tag, nameW)
 	content := nameFg.Render(name)
-	for _, p := range fit {
-		content += styleDim.Render(" (" + p + ")")
+	if branch != "" {
+		content += styleDim.Render(" (" + branch + ")")
+	}
+	if tag != "" {
+		content += styleDim.Render(" (" + tag + ")")
 	}
 	nameCell := lipgloss.NewStyle().Width(nameW).Render(content)
 	dirtyCell := lipgloss.NewStyle().Width(wDirty).Render(dirtyBadge(r.status))
