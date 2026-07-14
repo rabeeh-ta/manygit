@@ -24,8 +24,10 @@ type syncDoneMsg struct {
 }
 
 type pushDoneMsg struct {
-	path string
-	err  error
+	path    string
+	skipped bool
+	reason  string
+	err     error
 }
 
 type discardDoneMsg struct {

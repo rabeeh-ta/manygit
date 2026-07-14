@@ -100,7 +100,7 @@ func titledBarBox(label string, innerW, innerH int, focused bool, content string
 // cells wide and drift columns in some terminals) or alignment-safe ASCII +/-
 // when unicode=false. Every other token stays ASCII (always one cell):
 //
-//	ok in sync · *N dirty (dirtyBadge) · ~ fetching · . loading · ! no upstream/err
+//	ok in sync · *N dirty (dirtyBadge) · ~ fetching · . loading · no-remote local-only · ! no upstream/err
 func syncGlyph(r *repoVM, unicode bool) string {
 	if !r.loaded {
 		return styleDim.Render(".")
@@ -114,7 +114,15 @@ func syncGlyph(r *repoVM, unicode bool) string {
 	}
 	st := r.status
 	switch {
-	case st.Err != nil, !st.HasUpstream:
+	case st.Err != nil:
+		return styleRed.Render("!")
+	case !st.HasUpstream:
+		// Nothing to compare against. Two very different reasons: the repo has no
+		// remote at all (local-only — dim, nothing is wrong with it), or it has one
+		// and this branch was simply never pushed (!, actionable).
+		if !st.HasRemote {
+			return styleDim.Render("no-remote")
+		}
 		return styleRed.Render("!")
 	case st.Ahead > 0 && st.Behind > 0:
 		return styleMagenta.Render(fmt.Sprintf("%s%d %s%d", up, st.Ahead, down, st.Behind))
@@ -727,7 +735,8 @@ func (m Model) keysBody() string {
 		kr(styleMagenta.Render(up+"N"+down+"M"), "diverged"),
 		kr(styleOrange.Render("*N"), "N files changed (dirty)"),
 		kr(styleDim.Render("~ ."), "fetching / loading"),
-		kr(styleRed.Render("!"), "no upstream, or error"),
+		kr(styleDim.Render("no-remote"), "local-only repo (no remote configured)"),
+		kr(styleRed.Render("!"), "branch has no upstream, or error"),
 	}
 	tw := m.width
 	if tw <= 0 {

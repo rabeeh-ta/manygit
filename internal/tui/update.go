@@ -84,12 +84,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pushDoneMsg:
 		name := baseName(msg.path)
 		var s string
-		if msg.err != nil {
+		switch {
+		case msg.skipped:
+			s = styleOrange.Render("push " + name + " skipped: " + msg.reason)
+		case msg.err != nil:
 			s = styleRed.Render("push " + name + " failed: " + msg.err.Error())
-		} else {
+		default:
 			s = styleGreen.Render("pushed " + name)
 		}
 		exp := m.setStatus(s)
+		if msg.skipped {
+			return m, exp // nothing changed; no need to re-stat the repo
+		}
 		return m, tea.Batch(exp, statusCmd(msg.path))
 	case discardDoneMsg:
 		name := baseName(msg.path)
@@ -403,6 +409,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.bottomView = bvAgent
 	case "tab":
 		m.focus = (m.focus + 1) % panelCount
+	case "right":
+		// →/← hop between the two panels you actually browse together: Repos and
+		// the highlighted repo's Branches. Deliberately scoped to those two — from
+		// any other panel the arrows stay unbound, leaving them free for
+		// panel-local uses (e.g. scrolling a wide diff) later.
+		if m.focus == panelRepos {
+			m.focus = panelBranches
+			m.branchCursor = 0
+		}
+	case "left":
+		if m.focus == panelBranches {
+			m.focus = panelRepos
+		}
 	case "down", "j":
 		// Navigate within the FOCUSED panel (repos vs. branches), so browsing
 		// branches doesn't move the repo cursor and reload the panels.
@@ -537,6 +556,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				})
 				continue
 			}
+			// A local-only repo has nothing to pull from: `pull --ff-only` would
+			// fail with "no tracking information". Say why instead.
+			if !r.status.HasRemote {
+				path := r.repo.Path
+				cmds = append(cmds, func() tea.Msg {
+					return syncDoneMsg{path: path, skipped: true, reason: "no remote"}
+				})
+				continue
+			}
 			if r.status.DirtyCount > 0 {
 				path := r.repo.Path
 				cmds = append(cmds, func() tea.Msg {
@@ -550,6 +578,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p":
 		var cmds []tea.Cmd
 		for _, r := range m.targets() {
+			// Same for push: with no remote, git fails with "No configured push
+			// destination" — a skip with the reason is friendlier than a red error.
+			if r.loaded && !r.status.HasRemote {
+				path := r.repo.Path
+				cmds = append(cmds, func() tea.Msg {
+					return pushDoneMsg{path: path, skipped: true, reason: "no remote"}
+				})
+				continue
+			}
 			cmds = append(cmds, pushCmd(m.sem, r.repo.Path))
 		}
 		return m, tea.Batch(cmds...)

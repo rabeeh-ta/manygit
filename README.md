@@ -58,8 +58,10 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `?` | settings & help (themes, AI harness, glyphs, editor) |
 | `q` | quit |
 
-Status column: `ok` up to date · `↑N` ahead · `↓N` behind · `*N` dirty · `!` no
-upstream. Set `status_glyphs: ascii` (in config or `?`) if the arrows misalign.
+Status column: `ok` up to date · `↑N` ahead · `↓N` behind · `*N` dirty ·
+`no-remote` local-only repo (never pushed anywhere — `s`/`p` skip it) · `!` the
+branch has no upstream, or git errored. Set `status_glyphs: ascii` (in config or
+`?`) if the arrows misalign.
 
 ## AI agent (`7`)
 

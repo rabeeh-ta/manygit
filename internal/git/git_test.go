@@ -52,6 +52,25 @@ func TestStatus_CleanNoUpstream(t *testing.T) {
 	}
 }
 
+// A local-only repo (no remote at all) and a repo whose branch merely lacks an
+// upstream are different states — the status column shows them differently.
+func TestStatus_HasRemote(t *testing.T) {
+	local := initRepo(t)
+	if st := Status(local); st.HasRemote || st.HasUpstream {
+		t.Errorf("local-only repo: HasRemote=%v HasUpstream=%v, want false/false", st.HasRemote, st.HasUpstream)
+	}
+
+	clone, _ := initRepoWithRemote(t)
+	if st := Status(clone); !st.HasRemote || !st.HasUpstream {
+		t.Errorf("cloned repo: HasRemote=%v HasUpstream=%v, want true/true", st.HasRemote, st.HasUpstream)
+	}
+	// A brand-new branch in that same repo: it HAS a remote, it just isn't pushed.
+	gitCmd(t, clone, "checkout", "-q", "-b", "wip")
+	if st := Status(clone); !st.HasRemote || st.HasUpstream {
+		t.Errorf("unpushed branch: HasRemote=%v HasUpstream=%v, want true/false", st.HasRemote, st.HasUpstream)
+	}
+}
+
 func TestStatus_Dirty(t *testing.T) {
 	dir := initRepo(t)
 	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("new\n"), 0o644); err != nil {

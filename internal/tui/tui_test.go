@@ -1094,6 +1094,43 @@ func TestTUI_SyncGlyphModes(t *testing.T) {
 	}
 }
 
+// A local-only repo (no remote configured) reads "no-remote", not the red "!"
+// reserved for a genuine error or an unpushed branch — and s/p skip it with a
+// reason instead of failing with git's "No configured push destination".
+func TestTUI_NoRemoteRepo(t *testing.T) {
+	local := &repoVM{loaded: true, status: git.RepoStatus{}}                   // no remote at all
+	unpushed := &repoVM{loaded: true, status: git.RepoStatus{HasRemote: true}} // remote, branch not pushed
+	synced := &repoVM{loaded: true, status: git.RepoStatus{HasRemote: true, HasUpstream: true}}
+	for _, c := range []struct {
+		vm   *repoVM
+		want string
+	}{
+		{local, "no-remote"}, {unpushed, "!"}, {synced, "ok"},
+	} {
+		if g := stripANSI(syncGlyph(c.vm, false)); g != c.want {
+			t.Errorf("syncGlyph = %q, want %q", g, c.want)
+		}
+	}
+
+	// twoRepos builds plain `git init` repos — local-only, so s and p must skip.
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	if !strings.Contains(stripANSI(m.View()), "no-remote") {
+		t.Error("the Repos panel should mark a local-only repo no-remote")
+	}
+	for key, want := range map[string]string{"s": "sync", "p": "push"} {
+		mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		if cmd == nil {
+			t.Fatalf("%q should produce a command", key)
+		}
+		mm, _ = mm.(Model).Update(cmd())
+		got := stripANSI(mm.(Model).statusLine)
+		if !strings.Contains(got, want+" ") || !strings.Contains(got, "skipped: no remote") {
+			t.Errorf("%q on a local-only repo: status = %q, want %q ... skipped: no remote", key, got, want)
+		}
+	}
+}
+
 // ? opens the settings overlay; tab flips to the keybindings/legend view; esc closes.
 func TestTUI_HelpOverlay(t *testing.T) {
 	cfg, repos := twoRepos(t)

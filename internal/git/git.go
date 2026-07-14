@@ -20,7 +20,8 @@ type RepoStatus struct {
 	Behind      int
 	DirtyCount  int
 	Detached    bool
-	HasUpstream bool
+	HasRemote   bool // the repo has at least one remote configured
+	HasUpstream bool // the current branch tracks a remote branch
 	Err         error
 }
 
@@ -115,6 +116,13 @@ func Status(dir string) RepoStatus {
 	}
 
 	st.Default = resolveDefault(dir)
+
+	// A repo with no remote at all is a local-only repo, not a broken one: it has
+	// nothing to be ahead of or behind, and sync/push can't work. That is a
+	// different state from "has a remote, but this branch was never pushed".
+	if remotes, err := run(dir, "remote"); err == nil && remotes != "" {
+		st.HasRemote = true
+	}
 
 	if up, err := run(dir, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err == nil && up != "" {
 		st.HasUpstream = true
