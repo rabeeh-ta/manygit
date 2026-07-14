@@ -307,10 +307,14 @@ func (m Model) renderRepoBody(d dims, height int) string {
 }
 
 func (m Model) renderBranches(contentW, innerH int) string {
-	start, end := window(len(m.branches), m.branchCursor, innerH)
+	vb := m.visibleBranches()
+	if len(vb) == 0 && m.filterPanel == panelBranches && m.filter != "" {
+		return styleDim.Render("(no branches match \"" + m.filter + "\")")
+	}
+	start, end := window(len(vb), m.branchCursor, innerH)
 	var b strings.Builder
 	for i := start; i < end; i++ {
-		br := m.branches[i]
+		br := vb[i]
 		cursor := "  "
 		if m.focus == panelBranches && i == m.branchCursor {
 			cursor = styleCursor.Render("> ")
@@ -512,12 +516,15 @@ func (m Model) renderScripts(contentW, innerH int) string {
 }
 
 func (m Model) footer() string {
-	space := "space branches"
-	if m.focus == panelScripts {
-		space = "space run"
+	enter := "enter branches"
+	switch m.focus {
+	case panelScripts:
+		enter = "enter run"
+	case panelBranches:
+		enter = "enter checkout"
 	}
 	return styleDim.Render(
-		space + " | z zoom | g graph | n news | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ? help | q quit")
+		enter + " | z zoom | g graph | n news | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ? help | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -690,7 +697,7 @@ func (m Model) keysBody() string {
 		kr("tab", "cycle panels"),
 		kr("z", "zoom the focused pane full-screen"),
 		kr("j/k", "move in the focused panel"),
-		kr("space", "branches / run script / back"),
+		kr("enter", "branches / checkout / run script"),
 		kr("g", "full-screen commit graph"),
 		kr("n", "full-screen news feed (all headlines)"),
 		kr("t", "toggle each repo's latest tag inline"),

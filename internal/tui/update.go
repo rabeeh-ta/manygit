@@ -114,7 +114,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case branchesMsg:
 		if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == msg.path {
 			m.branches = msg.branches
-			if m.branchCursor >= len(m.branches) {
+			if m.branchCursor >= len(m.visibleBranches()) {
 				m.branchCursor = 0
 			}
 		}
@@ -413,7 +413,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.loadContextCmd()
 			}
 		case panelBranches:
-			if m.branchCursor < len(m.branches)-1 {
+			if m.branchCursor < len(m.visibleBranches())-1 {
 				m.branchCursor++
 			}
 		case panelScripts:
@@ -442,7 +442,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.bottomScroll(-1)
 		}
 	case "J":
-		if m.focus == panelBranches && m.branchCursor < len(m.branches)-1 {
+		if m.focus == panelBranches && m.branchCursor < len(m.visibleBranches())-1 {
 			m.branchCursor++
 		}
 	case "K":
@@ -450,6 +450,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.branchCursor--
 		}
 	case "enter":
+		// enter is the single selection key everywhere: Repos → drill into the
+		// repo's branches, Branches → checkout, Scripts → run, Graph/Changes → drill.
 		// Graph → drill into the selected commit/WIP's changed files.
 		if m.focus == panelBottom && m.bottomView == bvGraph {
 			m.bottomView = bvChanges
@@ -462,6 +464,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, diffCmd(r.repo.Path, m.selectedRef(), m.changeFiles[m.changeCursor].Path)
 			}
 			return m, nil
+		}
+		switch m.focus {
+		case panelRepos:
+			// Jump into the highlighted repo's branches.
+			m.focus = panelBranches
+			m.branchCursor = 0
+			return m, nil
+		case panelScripts:
+			cmd := m.runSelectedScript()
+			return m, cmd
 		}
 		cmd := m.checkoutSelected(vis)
 		return m, cmd
@@ -485,41 +497,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return nil
 			}
 		}
-	case " ":
-		switch m.focus {
-		case panelScripts:
-			vs := m.visibleScripts()
-			if m.scriptCursor < 0 || m.scriptCursor >= len(vs) {
-				return m, nil
-			}
-			// Run in the background and surface its live output in view 6.
-			m.outputRun++ // supersede any still-streaming previous run
-			m.outputTitle = vs[m.scriptCursor].Name
-			m.outputLines = nil
-			m.outputOffset = 0
-			m.outputRunning = true
-			m.focus = panelBottom
-			m.bottomView = bvOutput
-			return m, m.runScriptCmd()
-		case panelRepos:
-			// Jump into the highlighted repo's branches.
-			m.focus = panelBranches
-			m.branchCursor = 0
-		default:
-			m.focus = panelRepos
-		}
 	case "F":
 		// Toggle the "needs attention" view: only repos with changes / ahead / behind.
 		m.filterAttention = !m.filterAttention
 		m.cursor = 0
 		return m, m.loadContextCmd()
 	case "/":
+		// The filter is scoped to the pane you're on: Repos, Scripts, or Branches
+		// (searching the branch list is the only sane way through a repo's hundreds
+		// of remote refs). From the bottom slot it falls back to Repos.
 		m.filtering = true
 		m.filter = ""
-		if m.focus == panelScripts {
+		switch m.focus {
+		case panelScripts:
 			m.filterPanel = panelScripts
 			m.scriptCursor = 0
-		} else {
+		case panelBranches:
+			m.filterPanel = panelBranches
+			m.branchCursor = 0
+		default:
 			m.filterPanel = panelRepos
 			m.cursor = 0
 		}
@@ -602,8 +598,14 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyRunes:
 		m.filter += string(msg.Runes)
 	}
-	if m.filterPanel == panelScripts {
+	switch m.filterPanel {
+	case panelScripts:
 		m.scriptCursor = 0
+		return m, nil
+	case panelBranches:
+		// Purely a view-level narrowing of the already-loaded branch list: the
+		// highlighted repo doesn't change, so there is no context to reload.
+		m.branchCursor = 0
 		return m, nil
 	}
 	m.cursor = 0
@@ -821,24 +823,36 @@ func (m *Model) bottomScroll(delta int) {
 	}
 }
 
+// runSelectedScript starts the highlighted script in the background and flips the
+// bottom slot to Output (6) so its live output is visible; nil when the Scripts
+// cursor is out of range.
+func (m *Model) runSelectedScript() tea.Cmd {
+	vs := m.visibleScripts()
+	if m.scriptCursor < 0 || m.scriptCursor >= len(vs) {
+		return nil
+	}
+	m.outputRun++ // supersede any still-streaming previous run
+	m.outputTitle = vs[m.scriptCursor].Name
+	m.outputLines = nil
+	m.outputOffset = 0
+	m.outputRunning = true
+	m.focus = panelBottom
+	m.bottomView = bvOutput
+	return m.runScriptCmd()
+}
+
 // checkoutSelected checks out the highlighted branch when the Branches panel is
 // focused; nil (with an optional status set) otherwise.
 func (m *Model) checkoutSelected(vis []*repoVM) tea.Cmd {
+	branches := m.visibleBranches()
 	r := m.currentVisible(vis)
-	if r == nil || m.focus != panelBranches || m.branchCursor >= len(m.branches) {
+	if r == nil || m.focus != panelBranches || m.branchCursor >= len(branches) {
 		return nil
 	}
 	if r.status.DirtyCount > 0 {
 		return m.setStatus(styleOrange.Render("checkout skipped: dirty working tree"))
 	}
-	target := m.branches[m.branchCursor]
-	name := target.Name
-	if target.IsRemote {
-		if idx := strings.LastIndex(name, "/"); idx >= 0 {
-			name = name[idx+1:]
-		}
-	}
-	return checkoutCmd(m.sem, r.repo.Path, name)
+	return checkoutCmd(m.sem, r.repo.Path, branches[m.branchCursor].LocalName())
 }
 
 // targets returns the repo actions apply to: the highlighted (cursor) repo.

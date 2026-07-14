@@ -253,6 +253,43 @@ func TestBranches_ListsLocalAndCurrent(t *testing.T) {
 	}
 }
 
+// A remote-only branch whose name contains slashes (feat/…, fix/…) must be
+// listed and checked out under its FULL name: dropping everything up to the last
+// slash would try to check out a nonexistent "aisuite-onboarding".
+func TestBranches_RemoteWithSlashesCheckedOutWhole(t *testing.T) {
+	clone, bare := initRepoWithRemote(t)
+	other := t.TempDir()
+	gitCmd(t, other, "clone", "-q", bare, ".")
+	gitCmd(t, other, "checkout", "-q", "-b", "feat/aisuite-onboarding")
+	gitCmd(t, other, "push", "-q", "origin", "feat/aisuite-onboarding")
+	if err := Fetch(clone); err != nil {
+		t.Fatal(err)
+	}
+
+	branches, err := Branches(clone)
+	if err != nil {
+		t.Fatalf("Branches: %v", err)
+	}
+	var target Branch
+	for _, b := range branches {
+		if b.Name == "origin/feat/aisuite-onboarding" {
+			target = b
+		}
+	}
+	if !target.IsRemote {
+		t.Fatalf("origin/feat/aisuite-onboarding not listed, got %+v", branches)
+	}
+	if got := target.LocalName(); got != "feat/aisuite-onboarding" {
+		t.Fatalf("LocalName() = %q, want feat/aisuite-onboarding", got)
+	}
+	if err := Checkout(clone, target.LocalName()); err != nil {
+		t.Fatalf("Checkout of a remote-only branch: %v", err)
+	}
+	if st := Status(clone); st.Branch != "feat/aisuite-onboarding" {
+		t.Errorf("branch = %q, want feat/aisuite-onboarding", st.Branch)
+	}
+}
+
 func TestCheckout_SwitchesBranch(t *testing.T) {
 	dir := initRepo(t)
 	gitCmd(t, dir, "branch", "feature")

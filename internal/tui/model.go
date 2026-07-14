@@ -50,7 +50,7 @@ type Model struct {
 
 	filter          string
 	filtering       bool
-	filterPanel     panel // which list `/` filters: panelRepos or panelScripts
+	filterPanel     panel // which list `/` filters: the panel focused when it was pressed
 	filterAttention bool  // show only repos with changes / ahead / behind
 	showHelp        bool  // the settings + help overlay
 	showGraph       bool  // full-screen commit graph overlay
@@ -146,6 +146,24 @@ func (m Model) visibleScripts() []discover.Script {
 	for _, s := range m.scripts {
 		if strings.Contains(strings.ToLower(s.Name), needle) {
 			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// visibleBranches is the branch list after the `/` filter (when it targets the
+// Branches panel). The branchCursor, checkout, and render all index this slice.
+// The needle matches the name as shown, so "origin/" narrows to remote branches
+// — the practical way to reach one of a repo's hundreds of remote refs.
+func (m Model) visibleBranches() []git.Branch {
+	if m.filterPanel != panelBranches || m.filter == "" {
+		return m.branches
+	}
+	needle := strings.ToLower(m.filter)
+	var out []git.Branch
+	for _, b := range m.branches {
+		if strings.Contains(strings.ToLower(b.Name), needle) {
+			out = append(out, b)
 		}
 	}
 	return out

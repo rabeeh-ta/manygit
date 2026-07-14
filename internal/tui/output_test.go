@@ -73,25 +73,25 @@ func TestScriptStreamingRealProcess(t *testing.T) {
 	}
 }
 
-// space in the Scripts panel starts the run, flips the bottom slot to the Output
+// enter in the Scripts panel starts the run, flips the bottom slot to the Output
 // view, and streamed lines append while the view follows the tail; done clears
 // the running flag.
-func TestTUI_SpaceRunsScriptIntoOutput(t *testing.T) {
+func TestTUI_EnterRunsScriptIntoOutput(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	scripts := []discover.Script{{Path: "/x/a.sh", Name: "a.sh"}}
 	m := loadAll(t, New(cfg, repos, scripts), 100, 30)
 	m.focus = panelScripts
 
-	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mm.(Model)
 	if cmd == nil {
-		t.Error("space should return a run command")
+		t.Error("enter should return a run command")
 	}
 	if m.focus != panelBottom || m.bottomView != bvOutput {
-		t.Errorf("space should focus the Output view, got focus=%d view=%d", m.focus, m.bottomView)
+		t.Errorf("enter should focus the Output view, got focus=%d view=%d", m.focus, m.bottomView)
 	}
 	if !m.outputRunning || m.outputTitle != "a.sh" {
-		t.Errorf("space should mark a.sh running, got running=%v title=%q", m.outputRunning, m.outputTitle)
+		t.Errorf("enter should mark a.sh running, got running=%v title=%q", m.outputRunning, m.outputTitle)
 	}
 	run := m.outputRun
 

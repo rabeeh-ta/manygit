@@ -112,19 +112,23 @@ func TestTUI_CursorMovesDown(t *testing.T) {
 var _ = lipgloss.Width // used by the spacing test in Task 10
 var _ = strings.Split
 
-// space drills into the highlighted repo's branches (and toggles back), instead
-// of the old multi-select.
-func TestTUI_SpaceFocusesBranches(t *testing.T) {
+// enter drills into the highlighted repo's branches; space is unbound and must
+// leave the focus untouched in both panels.
+func TestTUI_EnterFocusesBranches(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 100, 30) // focus starts on Repos
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
+	if mm.(Model).focus != panelRepos {
+		t.Error("space in the Repos panel should do nothing")
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mm.(Model)
 	if m.focus != panelBranches {
-		t.Errorf("space in Repos panel should focus Branches, got %v", m.focus)
+		t.Errorf("enter in Repos panel should focus Branches, got %v", m.focus)
 	}
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
-	if mm.(Model).focus != panelRepos {
-		t.Error("space in Branches panel should return to Repos")
+	if mm.(Model).focus != panelBranches {
+		t.Error("space in the Branches panel should do nothing")
 	}
 }
 
@@ -160,7 +164,7 @@ func TestTUI_FilterNarrowsList(t *testing.T) {
 	}
 }
 
-// The Scripts panel lists discovered scripts; j/k move its cursor and space
+// The Scripts panel lists discovered scripts; j/k move its cursor and enter
 // (when it's focused) builds a run command for the highlighted script.
 func TestTUI_ScriptsPanel(t *testing.T) {
 	cfg, repos := twoRepos(t)
@@ -179,7 +183,7 @@ func TestTUI_ScriptsPanel(t *testing.T) {
 	if m.scriptCursor != 1 {
 		t.Errorf("j in Scripts panel should move scriptCursor, got %d", m.scriptCursor)
 	}
-	// space in the Scripts panel yields a (non-nil) run command; it does not run here.
+	// enter in the Scripts panel yields a (non-nil) run command; it does not run here.
 	if m.runScriptCmd() == nil {
 		t.Errorf("expected a run command for the highlighted script")
 	}
@@ -220,10 +224,54 @@ func TestTUI_SlashFiltersScripts(t *testing.T) {
 	}
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // commit filter
 	m = mm.(Model)
-	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // run the highlighted script
 	m = mm.(Model)
 	if m.outputTitle != "sync-edx.sh" {
-		t.Errorf("space should run the highlighted filtered script, got %q", m.outputTitle)
+		t.Errorf("enter should run the highlighted filtered script, got %q", m.outputTitle)
+	}
+}
+
+// `/` in the Branches panel filters the branch list (not the repos list) — the
+// only practical way through a repo's hundreds of remote refs — and the cursor
+// and checkout both index the filtered view.
+func TestTUI_SlashFiltersBranches(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m.focus = panelBranches
+	m.branches = []git.Branch{
+		{Name: "master", IsCurrent: true},
+		{Name: "origin/feat/aisuite-onboarding", IsRemote: true},
+		{Name: "origin/fix/search_filter", IsRemote: true},
+	}
+
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = mm.(Model)
+	if m.filterPanel != panelBranches {
+		t.Fatalf("`/` in Branches should target the branch list, got %d", m.filterPanel)
+	}
+	for _, r := range "feat" {
+		mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = mm.(Model)
+	}
+	vb := m.visibleBranches()
+	if len(vb) != 1 || vb[0].Name != "origin/feat/aisuite-onboarding" {
+		t.Fatalf("filtering branches to \"feat\" -> %+v, want [origin/feat/aisuite-onboarding]", vb)
+	}
+	if len(m.visibleRepos()) != len(repos) {
+		t.Error("a branches-scoped filter must not narrow the repos list")
+	}
+	if len(m.visibleScripts()) != len(m.scripts) {
+		t.Error("a branches-scoped filter must not narrow the scripts list")
+	}
+	if v := stripANSI(m.View()); strings.Contains(v, "search_filter") {
+		t.Error("the Branches panel should render only the matching branches")
+	}
+	// The cursor indexes the FILTERED list, so enter checks out the match (not
+	// whatever sat at that index in the unfiltered list).
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // commit the filter
+	m = mm.(Model)
+	if m.branchCursor != 0 || m.visibleBranches()[m.branchCursor].LocalName() != "feat/aisuite-onboarding" {
+		t.Errorf("checkout target = %+v, want feat/aisuite-onboarding", m.visibleBranches()[m.branchCursor])
 	}
 }
 

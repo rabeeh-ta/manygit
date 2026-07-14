@@ -230,6 +230,20 @@ type Branch struct {
 	IsCurrent bool
 }
 
+// LocalName is the name to check a branch out by. For a remote branch it drops
+// only the remote prefix — "origin/feat/x" -> "feat/x", NOT "x" — so git's DWIM
+// creates a tracking branch of the right ref; branch names legitimately contain
+// slashes (feat/…, fix/…, release/…). Local branches are returned unchanged.
+func (b Branch) LocalName() string {
+	if !b.IsRemote {
+		return b.Name
+	}
+	if i := strings.Index(b.Name, "/"); i >= 0 {
+		return b.Name[i+1:]
+	}
+	return b.Name
+}
+
 // Branches lists local and remote branches (origin/HEAD is skipped).
 func Branches(dir string) ([]Branch, error) {
 	out, err := run(dir, "branch", "--all", "--format=%(HEAD)\t%(refname)")
