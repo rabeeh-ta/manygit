@@ -44,6 +44,7 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `1` `2` `3` | focus Repos / Scripts / Branches |
 | `4` `5` `6` `7` | bottom slot: Graph / Changes / Output / Agent |
 | `j` `k` | move within the focused panel |
+| `→` `←` | hop between Repos and Branches |
 | `enter` | Repos → view branches · Branches → checkout · Scripts → run the script |
 | `s` / `p` | sync (fetch + ff-pull) / push the highlighted repo |
 | `d` / `D` | discard changes (confirm): `d` tracked only · `D` also deletes untracked files |

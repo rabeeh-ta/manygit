@@ -705,6 +705,7 @@ func (m Model) keysBody() string {
 		kr("tab", "cycle panels"),
 		kr("z", "zoom the focused pane full-screen"),
 		kr("j/k", "move in the focused panel"),
+		kr("left/right", "hop between Repos and Branches"),
 		kr("enter", "branches / checkout / run script"),
 		kr("g", "full-screen commit graph"),
 		kr("n", "full-screen news feed (all headlines)"),

@@ -132,6 +132,50 @@ func TestTUI_EnterFocusesBranches(t *testing.T) {
 	}
 }
 
+// →/← hop between Repos and Branches, and nowhere else: from any other panel
+// they stay unbound, and while a `/` filter is being typed the filter handler
+// swallows them (so an arrow can't yank focus mid-search).
+func TestTUI_ArrowsHopReposBranches(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30) // focus starts on Repos
+
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = mm.(Model)
+	if m.focus != panelBranches {
+		t.Fatalf("right in Repos should focus Branches, got %v", m.focus)
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m = mm.(Model)
+	if m.focus != panelRepos {
+		t.Fatalf("left in Branches should focus Repos, got %v", m.focus)
+	}
+	// left from Repos / right from Branches are dead ends, not a wrap-around.
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if mm.(Model).focus != panelRepos {
+		t.Error("left in Repos should do nothing")
+	}
+	// Unbound in the other panels.
+	m.focus = panelScripts
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if mm.(Model).focus != panelScripts {
+		t.Error("right in Scripts should do nothing")
+	}
+	m.focus = panelBottom
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if mm.(Model).focus != panelBottom {
+		t.Error("left in the bottom slot should do nothing")
+	}
+	// While typing a filter, arrows must not move focus.
+	m.focus = panelRepos
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = mm.(Model)
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = mm.(Model)
+	if m.focus != panelRepos || !m.filtering {
+		t.Errorf("right while filtering should be swallowed, got focus=%v filtering=%v", m.focus, m.filtering)
+	}
+}
+
 func TestTUI_FilterNarrowsList(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
