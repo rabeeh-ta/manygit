@@ -607,7 +607,7 @@ func (m Model) renderChangesView(contentW, innerH int) string {
 		if ref := m.selectedRef(); ref != "" {
 			what = "commit " + ref[:min(7, len(ref))]
 		}
-		return styleDim.Render("(no changes in " + what + ")")
+		return centerBlock(contentW, innerH, styleDim.Render(truncate("no changes in "+what, contentW)))
 	}
 	focused := m.focus == panelBottom
 	start, end := window(len(m.changeFiles), m.changeCursor, innerH)
@@ -628,13 +628,15 @@ func (m Model) renderChangesView(contentW, innerH int) string {
 	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
 }
 
-// renderOutputView shows the live combined output of the last script run.
+// renderOutputView shows the live combined output of the last script run, or a
+// centered hint when there's nothing to show yet.
 func (m Model) renderOutputView(contentW, innerH int) string {
 	if len(m.outputLines) == 0 {
+		msg := "run a script from [2] Scripts to see its output here"
 		if m.outputRunning {
-			return styleDim.Render("(running " + m.outputTitle + "...)")
+			msg = "running " + m.outputTitle + "..."
 		}
-		return styleDim.Render("(run a script from [2] Scripts to see its output here)")
+		return centerBlock(contentW, innerH, styleDim.Render(truncate(msg, contentW)))
 	}
 	start, end := window(len(m.outputLines), m.outputOffset, innerH)
 	return lipgloss.NewStyle().MaxWidth(contentW).Render(strings.Join(m.outputLines[start:end], "\n"))
