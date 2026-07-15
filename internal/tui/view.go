@@ -348,7 +348,7 @@ func (m Model) bottomTabs() string {
 	views := []struct {
 		n    int
 		name string
-	}{{4, "Graph"}, {5, "Changes"}, {6, "Output"}, {7, "Agent"}}
+	}{{4, "Graph"}, {5, "Changes"}, {6, "Output"}}
 	activeStyle := lipgloss.NewStyle().Reverse(true).Bold(true)
 	tabs := make([]string, len(views))
 	for i, v := range views {
@@ -375,8 +375,6 @@ func (m Model) bottomHint() string {
 	}
 	var h string
 	switch {
-	case m.bottomView == bvAgent:
-		h = "" // the agent shows its own hint in-body (it has vertical room)
 	case m.bottomView == bvGraph:
 		h = "enter: its files" // WIP is always drillable, even with no commits
 	case m.bottomView == bvChanges && m.changeShowDiff:
@@ -397,8 +395,6 @@ func (m Model) renderBottom(contentW, innerH int) string {
 		return m.renderChangesView(contentW, innerH)
 	case bvOutput:
 		return m.renderOutputView(contentW, innerH)
-	case bvAgent:
-		return m.agentBody(contentW, innerH)
 	default:
 		return m.renderGraphView(contentW, innerH)
 	}
@@ -701,7 +697,6 @@ func (m Model) keysBody() string {
 		styleGroup.Render("Panels & navigation"),
 		kr("1/2/3", "focus Repos / Scripts / Branches"),
 		kr("4/5/6", "bottom: Graph / Changes / Output"),
-		kr("7", "AI agent (one-shot git helper)"),
 		kr("tab", "cycle panels"),
 		kr("z", "zoom the focused pane full-screen"),
 		kr("j/k", "move in the focused panel"),

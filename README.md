@@ -42,7 +42,7 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | Key | Action |
 |---|---|
 | `1` `2` `3` | focus Repos / Scripts / Branches |
-| `4` `5` `6` `7` | bottom slot: Graph / Changes / Output / Agent |
+| `4` `5` `6` | bottom slot: Graph / Changes / Output |
 | `j` `k` | move within the focused panel |
 | `→` `←` | hop between Repos and Branches |
 | `enter` | Repos → view branches · Branches → checkout · Scripts → run the script |
@@ -63,14 +63,6 @@ Status column: `ok` up to date · `↑N` ahead · `↓N` behind · `*N` dirty ·
 `no-remote` local-only repo (never pushed anywhere — `s`/`p` skip it) · `!` the
 branch has no upstream, or git errored. Set `status_glyphs: ascii` (in config or
 `?`) if the arrows misalign.
-
-## AI agent (`7`)
-
-Tab `7` is a one-shot AI command helper over all your repos. Press `enter` to
-type an instruction (e.g. "merge main into the authoring repo"); manygit sends it
-to your AI CLI (`claude` or `codex`, picked in `?`) with the workspace context,
-shows the git command(s) it proposes, and runs them **only after you confirm**.
-Number keys still switch panes while you're on it; `z` zooms for room.
 
 ## Config (optional)
 

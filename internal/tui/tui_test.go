@@ -319,6 +319,64 @@ func TestTUI_SlashFiltersBranches(t *testing.T) {
 	}
 }
 
+// A committed branch filter belongs to one repo, so moving the repo cursor
+// clears it — otherwise the stale needle silently filters the next repo's
+// branches. A committed *repo* filter, by contrast, must survive repo navigation.
+func TestTUI_BranchFilterClearsOnRepoChange(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m.focus = panelBranches
+	m.branches = []git.Branch{
+		{Name: "master", IsCurrent: true},
+		{Name: "origin/feat/x", IsRemote: true},
+	}
+	// Commit a branch filter, then hop back to Repos and move the cursor.
+	m.filter, m.filterPanel = "feat", panelBranches
+	if len(m.visibleBranches()) != 1 {
+		t.Fatalf("precondition: branch filter should show 1 branch, got %d", len(m.visibleBranches()))
+	}
+	m.focus = panelRepos
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown}) // next repo
+	m = mm.(Model)
+	if m.filter != "" || m.filterPanel == panelBranches {
+		t.Errorf("moving the repo cursor should clear the branch filter, got filter=%q panel=%d", m.filter, m.filterPanel)
+	}
+	if len(m.visibleBranches()) != len(m.branches) {
+		t.Error("after clearing, all branches should be visible again")
+	}
+
+	// A committed REPO filter must NOT be wiped by repo navigation.
+	m2 := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m2.focus = panelRepos
+	m2.filter, m2.filterPanel = "a", panelRepos // matches both alpha and bravo... narrow later
+	mm, _ = m2.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m2 = mm.(Model)
+	if m2.filter != "a" || m2.filterPanel != panelRepos {
+		t.Errorf("a repo filter must survive repo navigation, got filter=%q panel=%d", m2.filter, m2.filterPanel)
+	}
+}
+
+// Pressing p before a repo's status has loaded skips with a reason instead of
+// running git push blind (a local-only repo would fail "No configured push
+// destination"), mirroring the s handler.
+func TestTUI_PushSkipsUnloadedRepo(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := New(cfg, repos, nil) // no loadAll: repos start unloaded
+	mm, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = mm.(Model)
+	if m.currentVisible(m.visibleRepos()).loaded {
+		t.Fatal("precondition: repo should be unloaded")
+	}
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	if cmd == nil {
+		t.Fatal("p should produce a command")
+	}
+	mm, _ = mm.(Model).Update(cmd())
+	if got := stripANSI(mm.(Model).statusLine); !strings.Contains(got, "skipped: status not loaded yet") {
+		t.Errorf("push on an unloaded repo: status = %q, want skipped: status not loaded yet", got)
+	}
+}
+
 // Long ref names in the graph decorations are shortened when the graph loads,
 // leaving the commit subject intact.
 func TestTUI_GraphRefsShortened(t *testing.T) {

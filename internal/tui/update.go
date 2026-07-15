@@ -184,30 +184,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusLine = ""
 		}
 		return m, nil
-	case agentProposedMsg:
-		// Phase-gated (not view-gated): the reply is accepted even if you've
-		// navigated to another bottom view, but dropped if the request was
-		// cancelled (esc reset the phase off thinking).
-		if m.agentPhase == agentPhaseThinking {
-			if msg.err != nil {
-				m.agentErr = msg.err.Error()
-				m.agentPhase = agentPhaseInput
-			} else if len(msg.commands) == 0 {
-				m.agentErr = "the harness returned no commands"
-				m.agentPhase = agentPhaseInput
-			} else {
-				m.agentCommands = msg.commands
-				m.agentPhase = agentPhaseProposed
-			}
-		}
-		return m, nil
-	case agentExecutedMsg:
-		if m.agentPhase == agentPhaseRunning {
-			m.agentOutput = msg.output
-			m.agentOffset = 0
-			m.agentPhase = agentPhaseDone
-		}
-		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -303,17 +279,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
 		return m.handleSettingsKey(msg)
 	}
-	// Agent bottom slot (7): while composing an instruction the pane is modal and
-	// captures text; otherwise it's a normal navigable view and only its action
-	// keys are intercepted, so 1-7/z/g still switch panes.
-	if m.focus == panelBottom && m.bottomView == bvAgent && !m.showGraph {
-		if m.agentTyping {
-			return m.handleAgentTypingKey(msg)
-		}
-		if mm, cmd, handled := m.handleAgentNavKey(msg); handled {
-			return mm, cmd
-		}
-	}
 	if m.confirmDiscard {
 		full, path, name := m.confirmDiscardFull, m.confirmDiscardPath, m.confirmDiscardName
 		m.confirmDiscard = false
@@ -402,11 +367,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "6":
 		m.focus = panelBottom
 		m.bottomView = bvOutput
-	case "7":
-		// AI agent (one-shot command helper), the 4th bottom-slot view. Flipping
-		// to it keeps any in-progress state, just like Graph/Changes/Output.
-		m.focus = panelBottom
-		m.bottomView = bvAgent
 	case "tab":
 		m.focus = (m.focus + 1) % panelCount
 	case "right":
@@ -429,6 +389,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case panelRepos:
 			if m.cursor < len(vis)-1 {
 				m.cursor++
+				m.clearBranchFilter() // the branch filter belonged to the old repo
 				return m, m.loadContextCmd()
 			}
 		case panelBranches:
@@ -447,6 +408,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case panelRepos:
 			if m.cursor > 0 {
 				m.cursor--
+				m.clearBranchFilter() // the branch filter belonged to the old repo
 				return m, m.loadContextCmd()
 			}
 		case panelBranches:
@@ -578,9 +540,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p":
 		var cmds []tea.Cmd
 		for _, r := range m.targets() {
-			// Same for push: with no remote, git fails with "No configured push
-			// destination" — a skip with the reason is friendlier than a red error.
-			if r.loaded && !r.status.HasRemote {
+			// Until status loads we don't know if there's a remote — skip rather
+			// than push blind (a local-only repo would fail "No configured push
+			// destination"), mirroring the s handler.
+			if !r.loaded {
+				path := r.repo.Path
+				cmds = append(cmds, func() tea.Msg {
+					return pushDoneMsg{path: path, skipped: true, reason: "status not loaded yet"}
+				})
+				continue
+			}
+			// No remote: git fails with "No configured push destination" — a skip
+			// with the reason is friendlier than a red error.
+			if !r.status.HasRemote {
 				path := r.repo.Path
 				cmds = append(cmds, func() tea.Msg {
 					return pushDoneMsg{path: path, skipped: true, reason: "no remote"}
@@ -746,92 +718,6 @@ func (m Model) saveConfig() {
 	_ = config.Save(m.cfg, "")
 }
 
-// handleAgentTypingKey captures text while composing an instruction (insert
-// mode). esc drops back to nav mode keeping the buffer; enter asks the harness.
-func (m Model) handleAgentTypingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyCtrlC:
-		return m, tea.Quit
-	case tea.KeyEsc:
-		m.agentTyping = false // stop composing; stay on the agent view (keep text)
-	case tea.KeyEnter:
-		if strings.TrimSpace(m.agentInputBuf) == "" {
-			return m, nil
-		}
-		h, ok := harness.ByName(m.cfg.Harness)
-		if !ok || !h.Installed() {
-			m.agentErr = "no AI harness installed — pick one in ? settings"
-			m.agentTyping = false
-			return m, nil
-		}
-		m.agentErr = ""
-		m.agentTyping = false
-		m.agentPhase = agentPhaseThinking
-		return m, agentRunCmd(h, m.harnessDir(), m.agentPrompt(m.agentInputBuf))
-	case tea.KeyBackspace:
-		if len(m.agentInputBuf) > 0 {
-			m.agentInputBuf = m.agentInputBuf[:len(m.agentInputBuf)-1]
-		}
-	case tea.KeyRunes, tea.KeySpace:
-		m.agentInputBuf += string(msg.Runes)
-	}
-	return m, nil
-}
-
-// handleAgentNavKey handles the agent view's action keys while NOT composing, so
-// pane-navigation keys (1-7/z/g) still fall through to the main switch. It
-// returns handled=false for any key it doesn't own.
-func (m Model) handleAgentNavKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
-	switch m.agentPhase {
-	case agentPhaseInput:
-		switch msg.String() {
-		case "enter", "i":
-			m.agentTyping = true // start composing an instruction
-			return m, nil, true
-		}
-	case agentPhaseThinking:
-		if msg.String() == "esc" {
-			// Cancel: reset the phase so a late harness reply is dropped.
-			m.agentPhase = agentPhaseInput
-			m.agentErr = ""
-			return m, nil, true
-		}
-	case agentPhaseProposed:
-		switch msg.String() {
-		case "enter", "y":
-			m.agentPhase = agentPhaseRunning
-			return m, agentExecCmd(m.agentCommands), true
-		case "esc", "n":
-			m.agentPhase = agentPhaseInput // discard, back to the instruction
-			m.agentCommands = nil
-			return m, nil, true
-		}
-	case agentPhaseDone:
-		switch msg.String() {
-		case "enter":
-			m.agentPhase = agentPhaseInput // new instruction
-			m.agentInputBuf = ""
-			m.agentCommands = nil
-			m.agentOutput = nil
-			m.agentOffset = 0
-			return m, nil, true
-		case "esc":
-			m.agentPhase = agentPhaseInput // clear the output, back to the prompt
-			m.agentInputBuf = ""
-			m.agentOutput = nil
-			m.agentOffset = 0
-			return m, nil, true
-		case "down", "j":
-			m.agentOffset = clampInt(m.agentOffset+1, 0, max(0, len(m.agentOutput)-1))
-			return m, nil, true
-		case "up", "k":
-			m.agentOffset = clampInt(m.agentOffset-1, 0, max(0, len(m.agentOutput)-1))
-			return m, nil, true
-		}
-	}
-	return m, nil, false
-}
-
 func baseName(p string) string { return filepath.Base(p) }
 
 func clampInt(v, lo, hi int) int {
@@ -857,6 +743,19 @@ func (m *Model) bottomScroll(delta int) {
 		}
 	case bvOutput:
 		m.outputOffset = clampInt(m.outputOffset+delta, 0, max(0, len(m.outputLines)-1))
+	}
+}
+
+// clearBranchFilter drops an active `/` filter *only* when it's scoped to the
+// Branches panel. A branch filter belongs to one repo's branch list, so it must
+// be cleared when the selected repo changes — otherwise the stale needle silently
+// filters the next repo's branches. A Repos/Scripts filter is left untouched, so
+// navigating within a committed repo filter still works.
+func (m *Model) clearBranchFilter() {
+	if m.filterPanel == panelBranches {
+		m.filter = ""
+		m.filterPanel = panelRepos
+		m.branchCursor = 0
 	}
 }
 

@@ -17,7 +17,7 @@ const (
 	panelRepos    panel = iota // key 1
 	panelScripts               // key 2
 	panelBranches              // key 3
-	panelBottom                // keys 4/5/6/7 (multi-view: graph / changes / output / agent)
+	panelBottom                // keys 4/5/6 (multi-view: graph / changes / output)
 	panelCount                 // number of focusable panels
 )
 
@@ -28,7 +28,6 @@ const (
 	bvGraph   bottomView = iota // key 4
 	bvChanges                   // key 5
 	bvOutput                    // key 6
-	bvAgent                     // key 7
 )
 
 // repoVM is the per-repo view model.
@@ -57,18 +56,6 @@ type Model struct {
 	showNews        bool  // full-screen news-feed overlay (n)
 	showTagsInline  bool  // show each repo's latest tag inline in the Repos rows (t)
 	zoomed          bool  // maximize the focused pane to full screen (z)
-
-	// agent (7): a one-shot AI command helper over the whole workspace, shown in
-	// the bottom slot alongside Graph/Changes/Output. agentTyping is the insert
-	// mode: while false the pane is navigable (1-7/z work like any other view);
-	// pressing enter flips it true to compose an instruction (esc flips it back).
-	agentTyping   bool
-	agentPhase    agentPhase
-	agentInputBuf string
-	agentCommands []string
-	agentOutput   []string
-	agentOffset   int // scroll offset for the output
-	agentErr      string
 
 	// settings overlay (?): a cursor over a flat radio-list of choices (each theme,
 	// each glyph option, then the editor row); showKeys flips to the keybindings

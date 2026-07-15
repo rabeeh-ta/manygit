@@ -93,6 +93,18 @@ func newsTickCmd(gen int) tea.Cmd {
 	return tea.Tick(newsRotate, func(time.Time) tea.Msg { return newsTickMsg{gen: gen} })
 }
 
+// harnessDir is the working directory the harness runs in — the highlighted repo
+// (or the first repo). It mostly affects the harness's own ambient context.
+func (m Model) harnessDir() string {
+	if r := m.currentVisible(m.visibleRepos()); r != nil {
+		return r.repo.Path
+	}
+	if len(m.repos) > 0 {
+		return m.repos[0].repo.Path
+	}
+	return "."
+}
+
 // newsDebounceCmd schedules a news refresh a beat after a fetch; a later fetch
 // bumps the generation so only the last one in a burst actually refreshes.
 func newsDebounceCmd(gen int) tea.Cmd {

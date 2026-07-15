@@ -105,18 +105,6 @@ type newsDebounceMsg struct {
 	gen int
 }
 
-// agentProposedMsg carries the harness's generated commands (or an error).
-type agentProposedMsg struct {
-	commands []string
-	raw      string
-	err      error
-}
-
-// agentExecutedMsg carries the combined output of the confirmed commands.
-type agentExecutedMsg struct {
-	output []string
-}
-
 // graphMsg carries the colored graph lines plus commit entries for the graph view.
 type graphMsg struct {
 	path    string
