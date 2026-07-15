@@ -3,6 +3,7 @@ package tui
 import (
 	"bufio"
 
+	"manygit/internal/gh"
 	"manygit/internal/git"
 )
 
@@ -111,4 +112,29 @@ type graphMsg struct {
 	lines   []string
 	commits []git.GraphEntry
 	err     error
+}
+
+// ghProbeMsg reports gh readiness, resolved once at startup by ghProbeCmd:
+// installed = binary on PATH; available = installed AND authenticated; user is
+// the login when available.
+type ghProbeMsg struct {
+	installed bool
+	available bool
+	user      string
+}
+
+// prsMsg carries one of the two PR lists: review==true is the review-requested
+// list, false is the user's own open PRs. err is set when the gh query failed.
+type prsMsg struct {
+	review bool
+	prs    []gh.PullRequest
+	err    error
+}
+
+// prCheckoutDoneMsg is the result of `gh pr checkout` for a PR: path is the local
+// repo it ran in, number identifies the PR.
+type prCheckoutDoneMsg struct {
+	path   string
+	number int
+	err    error
 }

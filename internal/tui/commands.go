@@ -2,12 +2,15 @@ package tui
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"manygit/internal/gh"
 	"manygit/internal/git"
 )
 
@@ -141,5 +144,50 @@ func readScriptLine(sc *bufio.Scanner, run int) tea.Cmd {
 func checkoutCmd(sem chan struct{}, path, branch string) tea.Cmd {
 	return gated(sem, func() tea.Msg {
 		return checkoutDoneMsg{path: path, branch: branch, err: git.Checkout(path, branch)}
+	})
+}
+
+// ghProbeCmd resolves gh availability once at startup: gh on PATH AND
+// authenticated. Returns an unavailable probe immediately when gh is missing (no
+// exec), otherwise makes one `gh api user` call for the login.
+func ghProbeCmd() tea.Cmd {
+	return func() tea.Msg {
+		if !gh.Available() {
+			return ghProbeMsg{} // not installed
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		user, ok := gh.Login(ctx)
+		return ghProbeMsg{installed: true, available: ok, user: user}
+	}
+}
+
+// myPRsCmd loads the user's own open PRs (async gh search).
+func myPRsCmd() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		prs, err := gh.MyOpenPRs(ctx)
+		return prsMsg{review: false, prs: prs, err: err}
+	}
+}
+
+// reviewPRsCmd loads PRs whose review is requested of the user (async gh search).
+func reviewPRsCmd() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		prs, err := gh.ReviewRequestedPRs(ctx)
+		return prsMsg{review: true, prs: prs, err: err}
+	}
+}
+
+// ghCheckoutCmd checks out PR `number` into its local clone at path. Gated: it
+// fetches and moves the working tree, like the other write actions.
+func ghCheckoutCmd(sem chan struct{}, path string, number int) tea.Cmd {
+	return gated(sem, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		return prCheckoutDoneMsg{path: path, number: number, err: gh.Checkout(ctx, path, number)}
 	})
 }

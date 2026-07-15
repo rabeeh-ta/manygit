@@ -17,6 +17,7 @@ import (
 
 	"manygit/internal/config"
 	"manygit/internal/discover"
+	"manygit/internal/gh"
 	"manygit/internal/git"
 )
 
@@ -517,10 +518,10 @@ func TestTUI_BottomViewsAndSelection(t *testing.T) {
 		commits: []git.GraphEntry{{Line: 0, Hash: "aaaaaaa"}, {Line: 1, Hash: "bbbbbbb"}}})
 	m = mm.(Model)
 
-	mm, _ = m.Update(rk("4"))
+	mm, _ = m.Update(rk("5"))
 	m = mm.(Model)
 	if m.focus != panelBottom || m.bottomView != bvGraph {
-		t.Fatal("4 should focus the graph view")
+		t.Fatal("5 should focus the graph view")
 	}
 	if m.selectedRef() != "" {
 		t.Errorf("WIP ref should be empty, got %q", m.selectedRef())
@@ -530,10 +531,10 @@ func TestTUI_BottomViewsAndSelection(t *testing.T) {
 	if m.graphSel != 1 || m.selectedRef() != "aaaaaaa" {
 		t.Errorf("j should select aaaaaaa, sel=%d ref=%q", m.graphSel, m.selectedRef())
 	}
-	mm, cmd := m.Update(rk("5"))
+	mm, cmd := m.Update(rk("6"))
 	m = mm.(Model)
 	if m.bottomView != bvChanges || cmd == nil {
-		t.Fatal("5 should switch to Changes and load the selection's files")
+		t.Fatal("6 should switch to Changes and load the selection's files")
 	}
 	mm, _ = m.Update(changesMsg{path: path, ref: "aaaaaaa",
 		files: []git.FileChange{{Status: "M", Path: "foo.go"}, {Status: "A", Path: "bar.go"}}})
@@ -563,9 +564,9 @@ func TestTUI_BottomViewsAndSelection(t *testing.T) {
 	if m.changeShowDiff {
 		t.Error("esc should close the diff")
 	}
-	mm, _ = m.Update(rk("6"))
+	mm, _ = m.Update(rk("7"))
 	if mm.(Model).bottomView != bvOutput {
-		t.Error("6 should switch to Output")
+		t.Error("7 should switch to Output")
 	}
 }
 
@@ -580,7 +581,7 @@ func TestTUI_GraphDrillDown(t *testing.T) {
 		commits: []git.GraphEntry{{Line: 0, Hash: "aaaaaaa"}}})
 	m = mm.(Model)
 
-	mm, _ = m.Update(rk("4")) // Graph
+	mm, _ = m.Update(rk("5")) // Graph
 	m = mm.(Model)
 	mm, _ = m.Update(rk("j")) // select the commit (graphSel 1)
 	m = mm.(Model)
@@ -654,11 +655,11 @@ func TestTUI_ChangesFollowsRepoCursor(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 100, 30)
 
-	// open Changes (5), then focus Repos (1)
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
+	// open Changes (6), then focus Repos (1)
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("6")})
 	m = mm.(Model)
 	if m.bottomView != bvChanges {
-		t.Fatal("5 should show the Changes view")
+		t.Fatal("6 should show the Changes view")
 	}
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
 	m = mm.(Model)
@@ -927,11 +928,11 @@ func TestTUI_Zoom(t *testing.T) {
 	if !strings.Contains(v, "[1] Repos") || !strings.Contains(v, "zoom") {
 		t.Errorf("zoom should show the focused Repos pane full-screen:\n%s", v)
 	}
-	if strings.Contains(v, "[3] Branches") || strings.Contains(v, "[2] Scripts") {
+	if strings.Contains(v, "3 Branches") || strings.Contains(v, "[2] Scripts") {
 		t.Error("zoom should show ONLY the focused pane")
 	}
 	// zoom follows focus
-	mm, _ = m.Update(rk("4"))
+	mm, _ = m.Update(rk("5"))
 	m = mm.(Model)
 	if !m.zoomed {
 		t.Error("switching focus should keep zoom on")
@@ -945,7 +946,7 @@ func TestTUI_Zoom(t *testing.T) {
 	if m.zoomed {
 		t.Error("z should un-zoom")
 	}
-	if v := stripANSI(m.View()); !strings.Contains(v, "[1] Repos") || !strings.Contains(v, "[3] Branches") {
+	if v := stripANSI(m.View()); !strings.Contains(v, "[1] Repos") || !strings.Contains(v, "3 Branches") {
 		t.Error("restored view should show all panels again")
 	}
 }
@@ -1112,26 +1113,33 @@ func TestTUI_PanelsShowNumbers(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, repos, nil), 120, 40)
 	view := stripANSI(m.View())
-	for _, want := range []string{"[1] Repos", "[2] Scripts", "[3] Branches", "4 Graph", "5 Changes", "6 Output"} {
+	for _, want := range []string{"[1] Repos", "[2] Scripts", "3 Branches", "4 PRs", "5 Graph", "6 Changes", "7 Output"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("View missing panel label %q", want)
 		}
 	}
 }
 
-// The bottom tab bar lists all three views separated by "│" dividers and marks a
-// running Output with "*", so the views are distinct and always advertised.
-func TestTUI_BottomTabBar(t *testing.T) {
-	var m Model // bottomView defaults to bvGraph
-	plain := stripANSI(m.bottomTabs())
-	for _, want := range []string{"4 Graph", "│", "5 Changes", "6 Output"} {
-		if !strings.Contains(plain, want) {
-			t.Errorf("tab bar %q missing %q", plain, want)
+// The top-right slot advertises Branches (3) + PRs (4); the bottom slot advertises
+// Graph (5) / Changes (6) / Output (7), marking a running Output with "*". Both
+// use "│" dividers so every view is discoverable.
+func TestTUI_TabBars(t *testing.T) {
+	var m Model // topView/bottomView default to their zero values
+	top := stripANSI(m.topTabs())
+	for _, want := range []string{"3 Branches", "│", "4 PRs"} {
+		if !strings.Contains(top, want) {
+			t.Errorf("top tab bar %q missing %q", top, want)
+		}
+	}
+	bottom := stripANSI(m.bottomTabs())
+	for _, want := range []string{"5 Graph", "│", "6 Changes", "7 Output"} {
+		if !strings.Contains(bottom, want) {
+			t.Errorf("bottom tab bar %q missing %q", bottom, want)
 		}
 	}
 	m.bottomView = bvOutput
 	m.outputRunning = true
-	if got := stripANSI(m.bottomTabs()); !strings.Contains(got, "6 Output*") {
+	if got := stripANSI(m.bottomTabs()); !strings.Contains(got, "7 Output*") {
 		t.Errorf("running Output tab should show *: %q", got)
 	}
 }
@@ -1253,5 +1261,240 @@ func TestTUI_HelpOverlay(t *testing.T) {
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if mm.(Model).showHelp {
 		t.Error("esc should close the overlay")
+	}
+}
+
+// --- GitHub PR pane -------------------------------------------------------
+
+// key 4 focuses the PRs view (beside Branches); `m` toggles mine <->
+// review-requested (resetting the cursor), and the rows show the PR + its author.
+func TestTUI_PRPaneToggle(t *testing.T) {
+	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m.ghProbed, m.ghAvailable, m.ghUser = true, true, "rabeeh-ta"
+	m.prLoaded = true
+	m.prMine = []gh.PullRequest{{Number: 1, Title: "mine one", Author: "rabeeh-ta", RepoSlug: "o/a"}}
+	m.prReview = []gh.PullRequest{
+		{Number: 2, Title: "rev two", Author: "bob", RepoSlug: "o/b"},
+		{Number: 3, Title: "rev three", Author: "amy", RepoSlug: "o/c"},
+	}
+
+	mm, _ := m.Update(rk("4"))
+	m = mm.(Model)
+	if m.focus != panelBranches || m.topView != tvPRs {
+		t.Fatal("4 should focus the Branches panel on its PRs view")
+	}
+	if m.prShowReview {
+		t.Fatal("the PR pane should start on the 'mine' list")
+	}
+	if v := stripANSI(m.View()); !strings.Contains(v, "mine one") {
+		t.Errorf("PR pane should list my PR; view:\n%s", v)
+	}
+
+	m.prCursor = 1 // will reset on toggle
+	mm, _ = m.Update(rk("m"))
+	m = mm.(Model)
+	if !m.prShowReview || m.prCursor != 0 {
+		t.Fatalf("m should switch to the review list and reset the cursor, showReview=%v cursor=%d", m.prShowReview, m.prCursor)
+	}
+	if v := stripANSI(m.View()); !strings.Contains(v, "rev two") || !strings.Contains(v, "@bob") {
+		t.Errorf("review list should show the PR and its author; view:\n%s", v)
+	}
+
+	mm, _ = m.Update(rk("m"))
+	if mm.(Model).prShowReview {
+		t.Fatal("m should toggle back to the 'mine' list")
+	}
+
+	// m outside the PR pane does nothing.
+	m2 := loadAll(t, New(cfg, repos, nil), 120, 40) // focus starts on Repos
+	m2.prShowReview = false
+	mm, _ = m2.Update(rk("m"))
+	if got := mm.(Model); got.prShowReview || got.focus != panelRepos {
+		t.Error("m outside the PR pane must be a no-op")
+	}
+}
+
+// / in the PR pane filters the PR list only (not the repos), and leaving the pane
+// clears that filter.
+func TestTUI_PRFilterScoped(t *testing.T) {
+	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m.ghProbed, m.ghAvailable = true, true
+	m.prLoaded = true
+	m.prMine = []gh.PullRequest{
+		{Number: 1, Title: "add authoring tab", Author: "a", RepoSlug: "o/authoring"},
+		{Number: 2, Title: "fix account bug", Author: "b", RepoSlug: "o/account"},
+	}
+
+	mm, _ := m.Update(rk("4"))
+	m = mm.(Model)
+	mm, _ = m.Update(rk("/"))
+	m = mm.(Model)
+	if m.filterPanel != filterPRs {
+		t.Fatalf("/ in the PR pane should scope the filter to filterPRs, got %v", m.filterPanel)
+	}
+	for _, r := range "account" {
+		mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = mm.(Model)
+	}
+	if vis := m.visiblePRs(); len(vis) != 1 || vis[0].Number != 2 {
+		t.Fatalf("filter 'account' should match PR #2 only, got %d PRs", len(vis))
+	}
+	if len(m.visibleRepos()) != len(m.repos) {
+		t.Error("a PR-scoped filter must not narrow the repos list")
+	}
+
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // commit the filter
+	m = mm.(Model)
+	mm, _ = m.Update(rk("5")) // switch to Graph
+	m = mm.(Model)
+	if m.filterPanel == filterPRs || m.filter != "" {
+		t.Errorf("leaving the PR view should clear its filter, panel=%v filter=%q", m.filterPanel, m.filter)
+	}
+}
+
+// j/k move the PR cursor within the visible list (clamped at both ends).
+func TestTUI_PRNav(t *testing.T) {
+	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m.ghProbed, m.ghAvailable, m.prLoaded = true, true, true
+	m.prMine = []gh.PullRequest{{Number: 1}, {Number: 2}, {Number: 3}}
+	mm, _ := m.Update(rk("4"))
+	m = mm.(Model)
+	for _, want := range []int{1, 2, 2} { // down, down, down (clamped at 2)
+		mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = mm.(Model)
+		if m.prCursor != want {
+			t.Fatalf("prCursor = %d, want %d", m.prCursor, want)
+		}
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if mm.(Model).prCursor != 1 {
+		t.Fatalf("k should move the PR cursor up to 1, got %d", mm.(Model).prCursor)
+	}
+}
+
+// enter on a PR checks out the matching local clone when it's clean; it explains
+// itself when the repo isn't present or the tree is dirty. The gh command is never
+// executed here (we only assert the decision + status).
+func TestTUI_PRCheckoutDecision(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m.ghProbed, m.ghAvailable, m.prLoaded = true, true, true
+	m.focus, m.topView = panelBranches, tvPRs
+	m.repos[0].status.Slug = "acme/widgets"
+	m.repos[0].status.DirtyCount = 0
+
+	// matched + clean → a checkout is kicked off.
+	m.prMine = []gh.PullRequest{{Number: 7, RepoSlug: "acme/widgets"}}
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := stripANSI(mm.(Model).statusLine); !strings.Contains(got, "checking out PR #7") || cmd == nil {
+		t.Fatalf("clean matched checkout: status=%q cmd=%v", got, cmd)
+	}
+
+	// dirty tree → skipped.
+	m.repos[0].status.DirtyCount = 3
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := stripANSI(mm.(Model).statusLine); !strings.Contains(got, "dirty working tree") {
+		t.Errorf("dirty checkout should skip: status=%q", got)
+	}
+
+	// no matching local clone → not in view.
+	m.repos[0].status.DirtyCount = 0
+	m.prMine = []gh.PullRequest{{Number: 9, RepoSlug: "nope/here"}}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := stripANSI(mm.(Model).statusLine); !strings.Contains(got, "not in view") {
+		t.Errorf("unmatched PR should say not in view: status=%q", got)
+	}
+}
+
+// After a SUCCESSFUL PR checkout the app lands on that repo's Branches sub-view
+// (topView reset to tvBranches), not the PR list — ready to review. A FAILED
+// checkout leaves you on the PRs view with an error.
+func TestTUI_PRCheckoutLandsOnBranches(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m.focus, m.topView, m.prShowReview, m.prCursor = panelBranches, tvPRs, true, 3
+	target := m.repos[1].repo.Path
+
+	mm, _ := m.Update(prCheckoutDoneMsg{path: target, number: 42, err: nil})
+	got := mm.(Model)
+	if got.focus != panelBranches || got.topView != tvBranches {
+		t.Fatalf("checkout should land on the Branches sub-view, got focus=%v topView=%v", got.focus, got.topView)
+	}
+	if got.cursor != 1 {
+		t.Errorf("cursor should move to the checked-out repo (index 1), got %d", got.cursor)
+	}
+	if s := stripANSI(got.statusLine); !strings.Contains(s, "checked out PR #42") {
+		t.Errorf("status should confirm the checkout, got %q", s)
+	}
+
+	// a failed checkout stays on the PRs view with an error status.
+	m2 := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m2.focus, m2.topView = panelBranches, tvPRs
+	mm, _ = m2.Update(prCheckoutDoneMsg{path: target, number: 42, err: fmt.Errorf("boom")})
+	if g := mm.(Model); g.topView != tvPRs || !strings.Contains(stripANSI(g.statusLine), "failed") {
+		t.Errorf("failed checkout should stay on PRs with an error, topView=%v status=%q", g.topView, stripANSI(g.statusLine))
+	}
+}
+
+// The top-bar badge and bottom-bar github indicator appear only when gh is
+// available; both vanish without it.
+func TestTUI_PRBadgeAndIndicator(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m.ghProbed, m.ghAvailable, m.ghUser = true, true, "rabeeh-ta"
+	m.prReview = make([]gh.PullRequest, 2)
+	m.prMine = make([]gh.PullRequest, 1)
+	v := stripANSI(m.View())
+	for _, want := range []string{"review 2", "mine 1", "github: rabeeh-ta"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("View missing %q:\n%s", want, v)
+		}
+	}
+	m.ghAvailable = false
+	if v := stripANSI(m.View()); strings.Contains(v, "github:") || strings.Contains(v, "review 2") {
+		t.Error("without gh, the badge and github indicator must be hidden")
+	}
+}
+
+// The PR pane hints why it's empty when gh isn't usable.
+func TestTUI_PRUnavailableHint(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m.ghProbed, m.ghInstalled, m.ghAvailable = true, false, false
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	if v := stripANSI(mm.(Model).View()); !strings.Contains(v, "gh not installed") {
+		t.Errorf("PR pane should hint that gh is not installed; view:\n%s", v)
+	}
+}
+
+// An available probe loads both PR lists; prsMsg fills the right one. An
+// unavailable probe loads nothing. (The load commands are not executed here.)
+func TestTUI_GhProbeAndPrsMsg(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	mm, cmd := m.Update(ghProbeMsg{installed: true, available: true, user: "u"})
+	m = mm.(Model)
+	if !m.ghAvailable || m.ghUser != "u" || cmd == nil {
+		t.Fatalf("available probe should set the user and return a load cmd: user=%q cmd=%v", m.ghUser, cmd)
+	}
+	mm, _ = m.Update(prsMsg{review: true, prs: []gh.PullRequest{{Number: 5}}})
+	m = mm.(Model)
+	if len(m.prReview) != 1 || !m.prLoaded {
+		t.Fatal("prsMsg(review) should fill prReview and set prLoaded")
+	}
+	mm, _ = m.Update(prsMsg{review: false, prs: []gh.PullRequest{{Number: 6}, {Number: 7}}})
+	if len(mm.(Model).prMine) != 2 {
+		t.Fatal("prsMsg(mine) should fill prMine")
+	}
+
+	_, cmd2 := loadAll(t, New(cfg, repos, nil), 120, 40).Update(ghProbeMsg{})
+	if cmd2 != nil {
+		t.Error("an unavailable probe should not load PRs")
 	}
 }

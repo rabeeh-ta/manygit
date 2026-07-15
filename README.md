@@ -3,7 +3,7 @@
 A lazygit-style terminal UI for managing **many git repos at once**. See every
 repo's branch and whether it's ahead / behind / dirty, and fetch, pull, push, or
 switch branches on the highlighted one — plus a commit graph, a script runner,
-and an AI command helper.
+and a GitHub pull-request pane (when the `gh` CLI is installed).
 
 ## Install
 
@@ -42,10 +42,12 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | Key | Action |
 |---|---|
 | `1` `2` `3` | focus Repos / Scripts / Branches |
-| `4` `5` `6` | bottom slot: Graph / Changes / Output |
+| `4` | PRs — a tab beside Branches (top-right) |
+| `5` `6` `7` | bottom slot: Graph / Changes / Output |
 | `j` `k` | move within the focused panel |
 | `→` `←` | hop between Repos and Branches |
-| `enter` | Repos → view branches · Branches → checkout · Scripts → run the script |
+| `m` | in the PRs tab: toggle *my PRs* ⇄ *review requests* |
+| `enter` | Repos → view branches · Branches → checkout · Scripts → run · PRs → checkout the PR's branch |
 | `s` / `p` | sync (fetch + ff-pull) / push the highlighted repo |
 | `d` / `D` | discard changes (confirm): `d` tracked only · `D` also deletes untracked files |
 | `f` / `r` | fetch one / refetch all |
@@ -63,6 +65,28 @@ Status column: `ok` up to date · `↑N` ahead · `↓N` behind · `*N` dirty ·
 `no-remote` local-only repo (never pushed anywhere — `s`/`p` skip it) · `!` the
 branch has no upstream, or git errored. Set `status_glyphs: ascii` (in config or
 `?`) if the arrows misalign.
+
+## GitHub PRs (tab `4`, beside Branches)
+
+If the [`gh` CLI](https://cli.github.com) is installed and signed in
+(`gh auth login`), manygit adds a **PRs** tab next to Branches in the top-right
+slot (press `4`; `3` switches back to Branches) and shows `github: <user>` next
+to the harness in the footer. The tab lists two sets, toggled with `m`:
+
+- **mine** — your open pull requests
+- **review requests** — PRs waiting on *your* review
+
+Each row shows the repo, title, and author. A compact count of both appears at the
+right end of the top bar. Use `/` to filter and `j`/`k` to move, like every other
+list. Press `enter` on a PR to **check out its branch** in the matching local
+clone (matched by the origin remote) — manygit runs `gh pr checkout`, which
+handles forks and tracking, and then jumps you to that repo's Branches so you can
+review right away. It only checks out when the repo is in view and its working
+tree is clean; otherwise it says why. `r` refreshes the PR lists along with the
+repos.
+
+Needs `gh` 2.12+ (for `gh search prs`). Without `gh`, the pane simply shows a
+hint and the top-bar/footer GitHub bits are omitted.
 
 ## Config (optional)
 

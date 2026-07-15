@@ -340,30 +340,64 @@ func (m Model) renderBranches(contentW, innerH int) string {
 	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
 }
 
-// bottomTabs is the tab-bar label for the multi-view bottom slot: the four
-// views separated by dim "│" dividers, the active one in reverse-video and the
-// rest dim (a "*" on Output while a script runs), so the tabs read as distinct
-// and the inactive views are discoverable.
-func (m Model) bottomTabs() string {
-	views := []struct {
-		n    int
-		name string
-	}{{4, "Graph"}, {5, "Changes"}, {6, "Output"}}
+// tabBar renders a "[N Name] | ..." bar for a multi-view slot: the active tab in
+// reverse-video, the rest dim, joined by dim "│" dividers, so every view is
+// discoverable. active is the index of the current tab.
+func tabBar(tabs []struct {
+	n    int
+	name string
+}, active int) string {
 	activeStyle := lipgloss.NewStyle().Reverse(true).Bold(true)
-	tabs := make([]string, len(views))
-	for i, v := range views {
-		name := v.name
-		if v.n == 6 && m.outputRunning {
-			name += "*"
-		}
-		text := fmt.Sprintf(" %d %s ", v.n, name)
-		if i == int(m.bottomView) {
-			tabs[i] = activeStyle.Render(text)
+	out := make([]string, len(tabs))
+	for i, v := range tabs {
+		text := fmt.Sprintf(" %d %s ", v.n, v.name)
+		if i == active {
+			out[i] = activeStyle.Render(text)
 		} else {
-			tabs[i] = styleDim.Render(text)
+			out[i] = styleDim.Render(text)
 		}
 	}
-	return strings.Join(tabs, styleDim.Render("│"))
+	return strings.Join(out, styleDim.Render("│"))
+}
+
+// topTabs is the tab bar for the top-right slot: Branches (3) and PRs (4).
+func (m Model) topTabs() string {
+	return tabBar([]struct {
+		n    int
+		name string
+	}{{3, "Branches"}, {4, "PRs"}}, int(m.topView))
+}
+
+// bottomTabs is the tab bar for the bottom slot: Graph (5), Changes (6), Output
+// (7) — a "*" marks Output while a script runs.
+func (m Model) bottomTabs() string {
+	out := "Output"
+	if m.outputRunning {
+		out = "Output*"
+	}
+	return tabBar([]struct {
+		n    int
+		name string
+	}{{5, "Graph"}, {6, "Changes"}, {7, out}}, int(m.bottomView))
+}
+
+// topHint is a short, contextual action hint appended to the top-right slot's tab
+// bar while it's focused (ASCII only — it sits in the width-measured title).
+func (m Model) topHint() string {
+	if m.focus != panelBranches {
+		return ""
+	}
+	var h string
+	switch {
+	case m.topView == tvPRs && m.ghAvailable:
+		h = "enter: checkout   m: toggle list"
+	case m.topView == tvBranches:
+		h = "enter: checkout"
+	}
+	if h == "" {
+		return ""
+	}
+	return styleDim.Render("   " + h)
 }
 
 // bottomHint is a short, contextual action hint appended to the bottom panel's
@@ -388,6 +422,15 @@ func (m Model) bottomHint() string {
 	return styleDim.Render("   " + h)
 }
 
+// renderTop renders the active view of the top-right slot: the highlighted repo's
+// branches, or the GitHub PR list.
+func (m Model) renderTop(contentW, innerH int) string {
+	if m.topView == tvPRs {
+		return m.renderPRsView(contentW, innerH)
+	}
+	return m.renderBranches(contentW, innerH)
+}
+
 // renderBottom renders the active view of the multi-view bottom slot.
 func (m Model) renderBottom(contentW, innerH int) string {
 	switch m.bottomView {
@@ -398,6 +441,104 @@ func (m Model) renderBottom(contentW, innerH int) string {
 	default:
 		return m.renderGraphView(contentW, innerH)
 	}
+}
+
+// prUnavailableHint explains why the PR pane is empty when gh isn't usable —
+// still probing, not installed, or installed but not signed in.
+func (m Model) prUnavailableHint() string {
+	switch {
+	case !m.ghProbed:
+		return "checking GitHub..."
+	case !m.ghInstalled:
+		return "gh not installed\nsee cli.github.com to enable the PRs tab"
+	default:
+		return "gh found but not signed in\nrun: gh auth login"
+	}
+}
+
+// prEmptyState is the message (and optional secondary hint) shown when the active
+// PR list has nothing to show — filtered out, still loading, errored, or empty.
+func (m Model) prEmptyState() (msg, hint string) {
+	switch {
+	case m.filterPanel == filterPRs && m.filter != "":
+		return "No PRs match \"" + m.filter + "\"", "esc to clear the filter"
+	case !m.prLoaded:
+		return "Loading PRs...", ""
+	case m.prErr != nil:
+		return "Couldn't load PRs", "is gh up to date? needs 2.12+"
+	case m.prShowReview:
+		return "You're all caught up", "no PRs awaiting your review  ·  m: my PRs"
+	default:
+		return "No open PRs authored by you", "m: review requests"
+	}
+}
+
+// centerBlock centers a (possibly multi-line) string in a w×h area, so short
+// empty / hint messages sit calmly in the middle of a pane instead of the corner.
+func centerBlock(w, h int, s string) string {
+	if h < 1 {
+		h = 1
+	}
+	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, s)
+}
+
+// renderPRsView renders the PRs sub-view: a sub-toggle header (my PRs / review
+// requests, switched with `m`) pinned to the top, a blank spacer, then the active
+// (filtered) PR list. Empty / loading / unavailable states are centered for a
+// calmer, less-crammed look.
+func (m Model) renderPRsView(contentW, innerH int) string {
+	if !m.ghAvailable {
+		return centerBlock(contentW, innerH, styleDim.Align(lipgloss.Center).Render(m.prUnavailableHint()))
+	}
+
+	// Sub-toggle header: the active list emphasized, the other reachable via `m`.
+	my := "my PRs (" + strconv.Itoa(len(m.prMine)) + ")"
+	rev := "review requests (" + strconv.Itoa(len(m.prReview)) + ")"
+	sep := styleDim.Render("    ")
+	var header string
+	if m.prShowReview {
+		header = " " + styleDim.Render("m: "+my) + sep + styleGroup.Render(rev)
+	} else {
+		header = " " + styleGroup.Render(my) + sep + styleDim.Render("m: "+rev)
+	}
+
+	prs := m.visiblePRs()
+	if len(prs) == 0 {
+		msg, hint := m.prEmptyState()
+		block := styleDim.Render(msg)
+		if hint != "" {
+			block = lipgloss.JoinVertical(lipgloss.Center, styleDim.Render(msg), "", styleDim.Render(hint))
+		}
+		// Header pinned to the top; the message centered in the space below it.
+		body := header + "\n" + centerBlock(contentW, max(1, innerH-1), block)
+		return lipgloss.NewStyle().MaxWidth(contentW).Render(body)
+	}
+
+	listH := max(1, innerH-2) // header + a blank spacer line
+	focused := m.focus == panelBranches
+	start, end := window(len(prs), m.prCursor, listH)
+	var b strings.Builder
+	b.WriteString(header + "\n\n")
+	for i := start; i < end; i++ {
+		pr := prs[i]
+		cur := "   "
+		if focused && i == m.prCursor {
+			cur = " " + styleCursor.Render("> ")
+		}
+		repo := pr.RepoSlug
+		if s := strings.LastIndex(repo, "/"); s >= 0 {
+			repo = repo[s+1:] // just the repo name; owner is usually the same org
+		}
+		draft := ""
+		if pr.IsDraft {
+			draft = styleDim.Render(" [draft]")
+		}
+		row := cur + styleYellow.Render("#"+strconv.Itoa(pr.Number)) + "  " +
+			styleGroup.Render("@"+pr.Author) + "  " + pr.Title + draft +
+			styleDim.Render("  "+repo)
+		b.WriteString(row + "\n")
+	}
+	return lipgloss.NewStyle().MaxWidth(contentW).Render(b.String())
 }
 
 // window returns lines[start:end] so that keepVisible sits inside a height-h
@@ -526,6 +667,9 @@ func (m Model) footer() string {
 		enter = "enter run"
 	case panelBranches:
 		enter = "enter checkout"
+		if m.topView == tvPRs {
+			enter = "enter checkout PR"
+		}
 	}
 	return styleDim.Render(
 		enter + " | z zoom | g graph | n news | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ? help | q quit")
@@ -696,23 +840,28 @@ func (m Model) keysBody() string {
 	left := []string{
 		styleGroup.Render("Panels & navigation"),
 		kr("1/2/3", "focus Repos / Scripts / Branches"),
-		kr("4/5/6", "bottom: Graph / Changes / Output"),
+		kr("4", "PRs (beside Branches)"),
+		kr("5/6/7", "bottom: Graph / Changes / Output"),
 		kr("tab", "cycle panels"),
 		kr("z", "zoom the focused pane full-screen"),
 		kr("j/k", "move in the focused panel"),
 		kr("left/right", "hop between Repos and Branches"),
-		kr("enter", "branches / checkout / run script"),
+		kr("enter", "branches / checkout / run / checkout PR"),
 		kr("g", "full-screen commit graph"),
 		kr("n", "full-screen news feed (all headlines)"),
 		kr("t", "toggle each repo's latest tag inline"),
 		kr("F", "only changed / unsynced repos"),
 		kr("/", "filter the focused list"),
 		"",
-		styleGroup.Render("Graph (4) -> Changes (5)"),
-		kr("4 j/k", "select a commit (WIP on top)"),
-		kr("4 enter", "show its changed files"),
-		kr("5 j/k", "pick a file"),
-		kr("5 enter", "view its diff"),
+		styleGroup.Render("GitHub PRs (4)") + styleDim.Render("   (needs gh)"),
+		kr("m", "toggle mine / review-requested"),
+		kr("enter", "checkout the PR's branch in its repo"),
+		"",
+		styleGroup.Render("Graph (5) -> Changes (6)"),
+		kr("5 j/k", "select a commit (WIP on top)"),
+		kr("5 enter", "show its changed files"),
+		kr("6 j/k", "pick a file"),
+		kr("6 enter", "view its diff"),
 		kr("esc", "back: diff / files / graph"),
 	}
 	right := []string{
@@ -875,16 +1024,16 @@ func (m Model) View() string {
 		clampLines(m.renderScripts(d.leftW-2, scriptsInner), scriptsInner))
 	left := lipgloss.JoinVertical(lipgloss.Left, reposPanel, scriptsPanel)
 
-	// right column: two stacked panels sharing the left panel's total height.
+	// right column: two stacked multi-view slots sharing the left panel's total
+	// height. Top = Branches (3) / PRs (4); bottom = Graph (5) / Changes (6) /
+	// Output (7). Each shows a tab bar so the other views are discoverable.
 	topInner := max((d.bodyH-2)*40/100, 3)
 	botInner := max((d.bodyH-2)-topInner, 3)
-	branches := titledPanel(3, "Branches", d.rightW, topInner, m.focus == panelBranches,
-		clampLines(m.renderBranches(d.rightW-2, topInner), topInner))
-	// bottom multi-view slot: a tab bar of all four views (active in reverse-video)
-	// so the other views are discoverable, not just the current one.
+	top := titledBarBox(m.topTabs()+m.topHint(), d.rightW, topInner, m.focus == panelBranches,
+		clampLines(m.renderTop(d.rightW-2, topInner), topInner))
 	bottom := titledBarBox(m.bottomTabs()+m.bottomHint(), d.rightW, botInner, m.focus == panelBottom,
 		clampLines(m.renderBottom(d.rightW-2, botInner), botInner))
-	right := lipgloss.JoinVertical(lipgloss.Left, branches, bottom)
+	right := lipgloss.JoinVertical(lipgloss.Left, top, bottom)
 
 	cols := lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gutter), right)
 	view := lipgloss.JoinVertical(lipgloss.Left, title, "", cols, m.bottomBar(tw))
@@ -921,8 +1070,8 @@ func (m Model) zoomedView() string {
 		panel = titledPanel(2, "Scripts", innerW, innerH, true,
 			clampLines(m.renderScripts(contentW, innerH), innerH))
 	case panelBranches:
-		panel = titledPanel(3, "Branches", innerW, innerH, true,
-			clampLines(m.renderBranches(contentW, innerH), innerH))
+		panel = titledBarBox(m.topTabs()+m.topHint(), innerW, innerH, true,
+			clampLines(m.renderTop(contentW, innerH), innerH))
 	default: // panelRepos
 		zd := dims{leftW: innerW, rightW: innerW, bodyH: innerH, nameW: max(8, contentW-20)}
 		panel = titledPanel(1, "Repos", innerW, innerH, true,
@@ -932,9 +1081,47 @@ func (m Model) zoomedView() string {
 	return lipgloss.NewStyle().MaxWidth(tw).Render(view)
 }
 
-// topBar fills the space after the brand: the AI news feed (rotating commit
-// headlines) when available, otherwise the repo count / filter context.
+// topBar fills the space after the brand: the news/count content on the left and
+// a flush-right PR badge (when gh is available and something is pending).
 func (m Model) topBar(width int) string {
+	badge := m.prBadge()
+	bw := lipgloss.Width(badge)
+	if bw == 0 || bw+2 >= width {
+		return m.topBarMain(width) // no badge (or no room) — main fills the width
+	}
+	main := m.topBarMain(width - bw - 2) // reserve the badge + a 1-cell gap
+	gap := width - lipgloss.Width(main) - bw
+	if gap < 1 {
+		gap = 1
+	}
+	return main + strings.Repeat(" ", gap) + badge
+}
+
+// prBadge is the compact right-aligned PR summary for the top bar: the count of
+// PRs awaiting your review (actionable, colored) and your own open PRs (dim).
+// Shown only when gh is available and at least one is nonzero. ASCII, so it can't
+// drift columns.
+func (m Model) prBadge() string {
+	if !m.ghAvailable {
+		return ""
+	}
+	rev, mine := len(m.prReview), len(m.prMine)
+	if rev == 0 && mine == 0 {
+		return ""
+	}
+	var parts []string
+	if rev > 0 {
+		parts = append(parts, styleYellow.Render("review "+strconv.Itoa(rev)))
+	}
+	if mine > 0 {
+		parts = append(parts, styleDim.Render("mine "+strconv.Itoa(mine)))
+	}
+	return styleGroup.Render("PR ") + strings.Join(parts, "  ")
+}
+
+// topBarMain fills the space after the brand: the AI news feed (rotating commit
+// headlines) when available, otherwise the repo count / filter context.
+func (m Model) topBarMain(width int) string {
 	// While filtering or in the attention view, show the count context there.
 	if m.filtering || m.filter != "" || m.filterAttention {
 		count := fmt.Sprintf("%d of %d repos", len(m.visibleRepos()), len(m.repos))
@@ -959,10 +1146,10 @@ func (m Model) topBar(width int) string {
 }
 
 // bottomBar is the footer line: the status/filter/key-hints on the left and the
-// active AI harness on the right. The harness is always shown; the left side is
-// clipped to make room for it.
+// GitHub + AI-harness indicators on the right. The right cluster is always shown;
+// the left side is clipped to make room for it.
 func (m Model) bottomBar(width int) string {
-	right := m.harnessIndicator()
+	right := m.rightIndicators()
 	rw := lipgloss.Width(right)
 	if rw+1 >= width {
 		return right // extremely narrow: just the harness
@@ -973,6 +1160,25 @@ func (m Model) bottomBar(width int) string {
 		gap = 1
 	}
 	return left + strings.Repeat(" ", gap) + right
+}
+
+// rightIndicators is the bottom-bar right cluster: the GitHub login (only when
+// gh is available+authed) then the AI harness (always shown).
+func (m Model) rightIndicators() string {
+	h := m.harnessIndicator()
+	if g := m.githubIndicator(); g != "" {
+		return g + "   " + h
+	}
+	return h
+}
+
+// githubIndicator shows "github: <user>" when gh is available and authenticated,
+// else "" (users without gh see just the harness). Mirrors harnessIndicator.
+func (m Model) githubIndicator() string {
+	if !m.ghAvailable || m.ghUser == "" {
+		return ""
+	}
+	return styleGroup.Render("github: " + m.ghUser)
 }
 
 // harnessIndicator shows the active AI harness (dim/`no harness` if none is

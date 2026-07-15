@@ -105,7 +105,7 @@ func TestTUI_EnterRunsScriptIntoOutput(t *testing.T) {
 	if v := stripANSI(m.View()); !strings.Contains(v, "three") {
 		t.Error("Output view should render the streamed lines")
 	}
-	if v := stripANSI(m.View()); !strings.Contains(v, "6 Output*") {
+	if v := stripANSI(m.View()); !strings.Contains(v, "7 Output*") {
 		t.Error("bottom tab bar should mark Output with a running marker")
 	}
 

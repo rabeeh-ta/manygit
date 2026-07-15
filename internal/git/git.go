@@ -20,8 +20,9 @@ type RepoStatus struct {
 	Behind      int
 	DirtyCount  int
 	Detached    bool
-	HasRemote   bool // the repo has at least one remote configured
-	HasUpstream bool // the current branch tracks a remote branch
+	HasRemote   bool   // the repo has at least one remote configured
+	HasUpstream bool   // the current branch tracks a remote branch
+	Slug        string // origin remote as "owner/repo" (for matching GitHub PRs), or ""
 	Err         error
 }
 
@@ -122,6 +123,11 @@ func Status(dir string) RepoStatus {
 	// different state from "has a remote, but this branch was never pushed".
 	if remotes, err := run(dir, "remote"); err == nil && remotes != "" {
 		st.HasRemote = true
+		// Cache the origin slug so the TUI can match a GitHub PR to this repo
+		// without a git exec on the checkout keystroke.
+		if url, err := run(dir, "remote", "get-url", "origin"); err == nil {
+			st.Slug = parseSlug(url)
+		}
 	}
 
 	if up, err := run(dir, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err == nil && up != "" {
@@ -250,6 +256,45 @@ func (b Branch) LocalName() string {
 		return b.Name[i+1:]
 	}
 	return b.Name
+}
+
+// RemoteSlug returns the "owner/repo" of the repo's origin remote, parsed from
+// `git remote get-url origin`. It handles https and scp-style ssh URLs, with or
+// without a trailing ".git". An error (e.g. no origin remote) or an unparseable
+// URL yields "". Used to match a local clone to a GitHub PR's repository.
+func RemoteSlug(dir string) (string, error) {
+	out, err := run(dir, "remote", "get-url", "origin")
+	if err != nil {
+		return "", err
+	}
+	return parseSlug(out), nil
+}
+
+// parseSlug reduces a git remote URL to "owner/repo" (its last two path
+// segments). Pure, so it is unit-testable. Returns "" when the URL has fewer
+// than two path segments.
+func parseSlug(url string) string {
+	s := strings.TrimSpace(url)
+	s = strings.TrimSuffix(s, ".git")
+	if i := strings.Index(s, "://"); i >= 0 {
+		s = s[i+3:] // drop scheme
+		if at := strings.Index(s, "@"); at >= 0 {
+			s = s[at+1:] // drop optional user@
+		}
+		slash := strings.Index(s, "/")
+		if slash < 0 {
+			return ""
+		}
+		s = s[slash+1:] // drop host
+	} else if colon := strings.Index(s, ":"); colon >= 0 {
+		s = s[colon+1:] // scp form host:owner/repo (host may include user@)
+	}
+	s = strings.Trim(s, "/")
+	parts := strings.Split(s, "/")
+	if len(parts) < 2 || parts[len(parts)-2] == "" || parts[len(parts)-1] == "" {
+		return ""
+	}
+	return parts[len(parts)-2] + "/" + parts[len(parts)-1]
 }
 
 // Branches lists local and remote branches (origin/HEAD is skipped).

@@ -8,6 +8,7 @@ import (
 
 	"manygit/internal/config"
 	"manygit/internal/discover"
+	"manygit/internal/gh"
 	"manygit/internal/git"
 )
 
@@ -16,18 +17,33 @@ type panel int
 const (
 	panelRepos    panel = iota // key 1
 	panelScripts               // key 2
-	panelBranches              // key 3
-	panelBottom                // keys 4/5/6 (multi-view: graph / changes / output)
+	panelBranches              // keys 3/4 (top-right multi-view: Branches / PRs)
+	panelBottom                // keys 5/6/7 (bottom multi-view: graph / changes / output)
 	panelCount                 // number of focusable panels
+
+	// filterPRs is a filter-scope marker for the PR sub-view of the Branches
+	// panel. It is NOT a focusable panel (never assigned to m.focus, never in tab
+	// cycling — it sorts after panelCount); it only tags filterPanel so the PR
+	// filter is kept distinct from the branch filter that shares the same panel.
+	filterPRs
+)
+
+// topView is which view the top-right multi-view slot shows: the highlighted
+// repo's branches, or the GitHub PR list.
+type topView int
+
+const (
+	tvBranches topView = iota // key 3
+	tvPRs                     // key 4
 )
 
 // bottomView is which view the multi-view bottom-right slot shows.
 type bottomView int
 
 const (
-	bvGraph   bottomView = iota // key 4
-	bvChanges                   // key 5
-	bvOutput                    // key 6
+	bvGraph   bottomView = iota // key 5
+	bvChanges                   // key 6
+	bvOutput                    // key 7
 )
 
 // repoVM is the per-repo view model.
@@ -65,7 +81,8 @@ type Model struct {
 	editingOpenCmd bool
 	openCmdBuf     string
 
-	// bottom multi-view slot
+	// top-right multi-view slot (Branches / PRs) and bottom multi-view slot
+	topView    topView
 	bottomView bottomView
 
 	// graph view (4): colored git log --graph with a selectable commit cursor.
@@ -104,6 +121,26 @@ type Model struct {
 	newsGen      int // bumped per refresh; guards stale refreshes/ticks
 	newsDebounce int // bumped on each fetch; the latest debounce tick refreshes
 	newsLoading  bool
+
+	// PRs view (key 4, in the top-right slot beside Branches): GitHub pull requests
+	// via the gh CLI. Two lists — mine and review-requested — toggled by `m`;
+	// prCursor indexes the visible (filtered) list. Loaded async after gh is
+	// probed; shows a hint when gh is absent.
+	prMine       []gh.PullRequest
+	prReview     []gh.PullRequest
+	prShowReview bool // false = my open PRs, true = review requested of me
+	prCursor     int
+	prLoaded     bool  // both lists have returned at least once
+	prErr        error // last load error (e.g. gh too old for `search prs`)
+
+	// gh availability, resolved once at startup by ghProbeCmd. ghProbed flips true
+	// when the probe returns; ghInstalled = binary on PATH; ghAvailable = installed
+	// AND authenticated (gates the PR features); ghUser drives the bottom-bar
+	// "github: <user>" indicator.
+	ghProbed    bool
+	ghInstalled bool
+	ghAvailable bool
+	ghUser      string
 
 	sem           chan struct{}
 	width, height int
@@ -156,6 +193,35 @@ func (m Model) visibleBranches() []git.Branch {
 	return out
 }
 
+// activePRs returns the PR list the pane currently shows: review-requested when
+// prShowReview, otherwise the user's own open PRs.
+func (m Model) activePRs() []gh.PullRequest {
+	if m.prShowReview {
+		return m.prReview
+	}
+	return m.prMine
+}
+
+// visiblePRs is the active PR list after the `/` filter (when it targets the PR
+// sub-view, i.e. filterPanel == filterPRs). prCursor and the render index this
+// slice. The needle matches the repo slug, title, and author together, so
+// "authoring", part of a title, or an author login all narrow the list.
+func (m Model) visiblePRs() []gh.PullRequest {
+	prs := m.activePRs()
+	if m.filterPanel != filterPRs || m.filter == "" {
+		return prs
+	}
+	needle := strings.ToLower(m.filter)
+	var out []gh.PullRequest
+	for _, p := range prs {
+		hay := strings.ToLower(p.RepoSlug + " " + p.Title + " " + p.Author)
+		if strings.Contains(hay, needle) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // New builds a Model from discovered repos and scripts.
 func New(cfg config.Config, repos []discover.Repo, scripts []discover.Script) Model {
 	vms := make([]*repoVM, len(repos))
@@ -173,6 +239,8 @@ func New(cfg config.Config, repos []discover.Repo, scripts []discover.Script) Mo
 		scripts: scripts,
 		focus:   panelRepos,
 		sem:     make(chan struct{}, conc),
+		// topView/bottomView default to their zero values (tvBranches / bvGraph):
+		// the top-right shows Branches and the bottom shows Graph on launch.
 	}
 }
 
@@ -190,5 +258,6 @@ func (m Model) Init() tea.Cmd {
 	if c := m.loadContextCmd(); c != nil {
 		cmds = append(cmds, c)
 	}
+	cmds = append(cmds, ghProbeCmd()) // resolve gh availability, then load PRs
 	return tea.Batch(cmds...)
 }

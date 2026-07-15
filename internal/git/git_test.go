@@ -503,3 +503,38 @@ func TestGraphLog_ReturnsCommits(t *testing.T) {
 		t.Errorf("log should mention the 'init' commit, got:\n%s", strings.Join(lines, "\n"))
 	}
 }
+
+func TestParseSlug(t *testing.T) {
+	cases := map[string]string{
+		"https://github.com/rabeeh-ta/manygit.git": "rabeeh-ta/manygit",
+		"https://github.com/rabeeh-ta/manygit":     "rabeeh-ta/manygit",
+		"git@github.com:blend-ed/frontend-app.git": "blend-ed/frontend-app",
+		"git@github.com:blend-ed/frontend-app":     "blend-ed/frontend-app",
+		"ssh://git@github.com/o/r.git":             "o/r",
+		"https://user:tok@github.com/o/r.git":      "o/r",
+		"https://github.com/":                      "",
+		"not a url":                                "",
+		"":                                         "",
+	}
+	for in, want := range cases {
+		if got := parseSlug(in); got != want {
+			t.Errorf("parseSlug(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// RemoteSlug reads the origin URL; a repo with no origin yields ("", err).
+func TestRemoteSlug(t *testing.T) {
+	dir := initRepo(t)
+	if slug, err := RemoteSlug(dir); err == nil {
+		t.Errorf("no-origin repo should error, got slug %q", slug)
+	}
+	gitCmd(t, dir, "remote", "add", "origin", "git@github.com:acme/widgets.git")
+	slug, err := RemoteSlug(dir)
+	if err != nil {
+		t.Fatalf("RemoteSlug: %v", err)
+	}
+	if slug != "acme/widgets" {
+		t.Errorf("RemoteSlug = %q, want acme/widgets", slug)
+	}
+}

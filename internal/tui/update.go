@@ -125,6 +125,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case ghProbeMsg:
+		m.ghProbed = true
+		m.ghInstalled = msg.installed
+		m.ghAvailable = msg.available
+		m.ghUser = msg.user
+		if msg.available {
+			return m, tea.Batch(myPRsCmd(), reviewPRsCmd()) // now load both PR lists
+		}
+		return m, nil
+	case prsMsg:
+		if msg.err == nil {
+			if msg.review {
+				m.prReview = msg.prs
+			} else {
+				m.prMine = msg.prs
+			}
+		}
+		m.prLoaded = true
+		m.prErr = msg.err
+		if m.prCursor >= len(m.visiblePRs()) {
+			m.prCursor = 0
+		}
+		return m, nil
+	case prCheckoutDoneMsg:
+		name := baseName(msg.path)
+		num := strconv.Itoa(msg.number)
+		if msg.err != nil {
+			return m, m.setStatus(styleRed.Render("checkout PR #" + num + " in " + name + " failed: " + msg.err.Error()))
+		}
+		exp := m.setStatus(styleGreen.Render("checked out PR #" + num + " in " + name))
+		m.focusRepoByPath(msg.path) // land on that repo's branches, ready to review
+		return m, tea.Batch(exp, statusCmd(msg.path), m.loadContextCmd())
 	case latestTagMsg:
 		for _, r := range m.repos {
 			if r.repo.Path == msg.path {
@@ -356,16 +388,24 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = panelScripts
 	case "3":
 		m.focus = panelBranches
+		m.clearPRFilter() // leaving the PRs sub-view drops its `/` filter
+		m.topView = tvBranches
 	case "4":
-		m.focus = panelBottom
-		m.bottomView = bvGraph
+		m.focus = panelBranches
+		m.topView = tvPRs
 	case "5":
 		m.focus = panelBottom
+		m.clearPRFilter()
+		m.bottomView = bvGraph
+	case "6":
+		m.focus = panelBottom
+		m.clearPRFilter()
 		m.bottomView = bvChanges
 		m.changeShowDiff = false
 		return m, m.loadChangesCmd()
-	case "6":
+	case "7":
 		m.focus = panelBottom
+		m.clearPRFilter()
 		m.bottomView = bvOutput
 	case "tab":
 		m.focus = (m.focus + 1) % panelCount
@@ -376,6 +416,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// panel-local uses (e.g. scrolling a wide diff) later.
 		if m.focus == panelRepos {
 			m.focus = panelBranches
+			m.topView = tvBranches // → always shows the highlighted repo's branches
 			m.branchCursor = 0
 		}
 	case "left":
@@ -383,8 +424,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focus = panelRepos
 		}
 	case "down", "j":
-		// Navigate within the FOCUSED panel (repos vs. branches), so browsing
-		// branches doesn't move the repo cursor and reload the panels.
+		// Navigate within the FOCUSED panel (repos vs. branches/PRs), so browsing
+		// doesn't move the repo cursor and reload the panels.
 		switch m.focus {
 		case panelRepos:
 			if m.cursor < len(vis)-1 {
@@ -393,9 +434,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.loadContextCmd()
 			}
 		case panelBranches:
-			if m.branchCursor < len(m.visibleBranches())-1 {
-				m.branchCursor++
-			}
+			m.topScroll(1)
 		case panelScripts:
 			if m.scriptCursor < len(m.visibleScripts())-1 {
 				m.scriptCursor++
@@ -412,9 +451,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.loadContextCmd()
 			}
 		case panelBranches:
-			if m.branchCursor > 0 {
-				m.branchCursor--
-			}
+			m.topScroll(-1)
 		case panelScripts:
 			if m.scriptCursor > 0 {
 				m.scriptCursor--
@@ -423,16 +460,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.bottomScroll(-1)
 		}
 	case "J":
-		if m.focus == panelBranches && m.branchCursor < len(m.visibleBranches())-1 {
+		if m.focus == panelBranches && m.topView == tvBranches && m.branchCursor < len(m.visibleBranches())-1 {
 			m.branchCursor++
 		}
 	case "K":
-		if m.focus == panelBranches && m.branchCursor > 0 {
+		if m.focus == panelBranches && m.topView == tvBranches && m.branchCursor > 0 {
 			m.branchCursor--
 		}
 	case "enter":
 		// enter is the single selection key everywhere: Repos → drill into the
-		// repo's branches, Branches → checkout, Scripts → run, Graph/Changes → drill.
+		// repo's branches, Branches → checkout, PRs → checkout the PR's branch,
+		// Scripts → run, Graph/Changes → drill.
 		// Graph → drill into the selected commit/WIP's changed files.
 		if m.focus == panelBottom && m.bottomView == bvGraph {
 			m.bottomView = bvChanges
@@ -450,17 +488,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case panelRepos:
 			// Jump into the highlighted repo's branches.
 			m.focus = panelBranches
+			m.topView = tvBranches
+			m.clearPRFilter()
 			m.branchCursor = 0
 			return m, nil
 		case panelScripts:
-			cmd := m.runSelectedScript()
-			return m, cmd
+			return m, m.runSelectedScript()
+		case panelBranches:
+			if m.topView == tvPRs {
+				return m, m.checkoutPR() // checkout the highlighted PR's branch
+			}
 		}
-		cmd := m.checkoutSelected(vis)
-		return m, cmd
+		return m, m.checkoutSelected(vis) // Branches → checkout the highlighted branch
 	case "b":
 		cmd := m.checkoutSelected(vis)
 		return m, cmd
+	case "m":
+		// Toggle the PRs sub-view between "my PRs" and "review requests". Dedicated
+		// key, scoped to the PRs view so it stays unbound everywhere else.
+		if m.focus == panelBranches && m.topView == tvPRs {
+			m.prShowReview = !m.prShowReview
+			m.prCursor = 0
+		}
 	case "esc":
 		// Back-navigate the bottom slot: diff → file list → graph.
 		if m.focus == panelBottom && m.bottomView == bvChanges {
@@ -484,16 +533,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 		return m, m.loadContextCmd()
 	case "/":
-		// The filter is scoped to the pane you're on: Repos, Scripts, or Branches
-		// (searching the branch list is the only sane way through a repo's hundreds
-		// of remote refs). From the bottom slot it falls back to Repos.
+		// The filter is scoped to the sub-view you're on: Repos, Scripts, Branches,
+		// or PRs (searching the branch list is the only sane way through a repo's
+		// hundreds of remote refs). From the bottom slot it falls back to Repos.
 		m.filtering = true
 		m.filter = ""
-		switch m.focus {
-		case panelScripts:
+		switch {
+		case m.focus == panelScripts:
 			m.filterPanel = panelScripts
 			m.scriptCursor = 0
-		case panelBranches:
+		case m.focus == panelBranches && m.topView == tvPRs:
+			m.filterPanel = filterPRs
+			m.prCursor = 0
+		case m.focus == panelBranches:
 			m.filterPanel = panelBranches
 			m.branchCursor = 0
 		default:
@@ -507,7 +559,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.lastFetch = time.Now() // manual refresh resets the focus cooldown
-		return m, m.refetchAllCmd()
+		cmds := []tea.Cmd{m.refetchAllCmd()}
+		if m.ghAvailable {
+			cmds = append(cmds, myPRsCmd(), reviewPRsCmd()) // refresh PRs too
+		}
+		return m, tea.Batch(cmds...)
 	case "s":
 		var cmds []tea.Cmd
 		for _, r := range m.targets() {
@@ -615,6 +671,10 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Purely a view-level narrowing of the already-loaded branch list: the
 		// highlighted repo doesn't change, so there is no context to reload.
 		m.branchCursor = 0
+		return m, nil
+	case filterPRs:
+		// PR filter: narrows the already-loaded PR list, nothing to reload.
+		m.prCursor = 0
 		return m, nil
 	}
 	m.cursor = 0
@@ -730,6 +790,15 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
+// topScroll moves the cursor of the active top-right view (Branches or PRs).
+func (m *Model) topScroll(delta int) {
+	if m.topView == tvPRs {
+		m.prCursor = clampInt(m.prCursor+delta, 0, max(0, len(m.visiblePRs())-1))
+		return
+	}
+	m.branchCursor = clampInt(m.branchCursor+delta, 0, max(0, len(m.visibleBranches())-1))
+}
+
 // bottomScroll moves the cursor/scroll of the active bottom view by delta.
 func (m *Model) bottomScroll(delta int) {
 	switch m.bottomView {
@@ -759,8 +828,83 @@ func (m *Model) clearBranchFilter() {
 	}
 }
 
+// clearPRFilter drops a `/` filter scoped to the PRs sub-view (filterPanel ==
+// filterPRs). Called when the top slot switches to Branches or focus moves to the
+// bottom slot, where the PR needle is meaningless and would otherwise persist.
+func (m *Model) clearPRFilter() {
+	if m.filterPanel == filterPRs {
+		m.filter = ""
+		m.filterPanel = panelRepos
+		m.prCursor = 0
+	}
+}
+
+// repoBySlug finds the discovered repo whose origin remote is slug (case-
+// insensitive), or nil. Uses the slug computed at status-load time, so it does no
+// git exec on the keystroke.
+func (m Model) repoBySlug(slug string) *repoVM {
+	if slug == "" {
+		return nil
+	}
+	want := strings.ToLower(slug)
+	for _, r := range m.repos {
+		if r.status.Slug != "" && strings.ToLower(r.status.Slug) == want {
+			return r
+		}
+	}
+	return nil
+}
+
+// checkoutPR checks out the highlighted PR into its matching local clone: it maps
+// the PR's repo slug to a discovered repo by origin, then runs `gh pr checkout`.
+// Sets an explanatory status (and returns just that) when there's no local clone
+// or the tree is dirty.
+func (m *Model) checkoutPR() tea.Cmd {
+	prs := m.visiblePRs()
+	if m.prCursor < 0 || m.prCursor >= len(prs) {
+		return nil
+	}
+	pr := prs[m.prCursor]
+	r := m.repoBySlug(pr.RepoSlug)
+	if r == nil {
+		return m.setStatus(styleOrange.Render("PR repo " + pr.RepoSlug + " is not in view"))
+	}
+	if r.status.DirtyCount > 0 {
+		return m.setStatus(styleOrange.Render("checkout skipped: dirty working tree in " + baseName(r.repo.Path)))
+	}
+	num := strconv.Itoa(pr.Number)
+	return tea.Batch(
+		m.setStatus(styleDim.Render("checking out PR #"+num+" in "+baseName(r.repo.Path)+"...")),
+		ghCheckoutCmd(m.sem, r.repo.Path, pr.Number),
+	)
+}
+
+// focusRepoByPath moves the repo cursor to the repo at path and focuses its
+// Branches pane, so a PR checkout lands you ready to review. It clears any
+// repo/branch filter and the attention view so the target is visible and the
+// cursor indexes m.repos directly. No-op if path isn't among the repos.
+func (m *Model) focusRepoByPath(path string) {
+	idx := -1
+	for i, r := range m.repos {
+		if r.repo.Path == path {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return
+	}
+	m.filter = ""
+	m.filterPanel = panelRepos
+	m.filterAttention = false
+	m.cursor = idx
+	m.branchCursor = 0
+	m.focus = panelBranches
+	m.topView = tvBranches // show the checked-out repo's branches, not the PR list
+}
+
 // runSelectedScript starts the highlighted script in the background and flips the
-// bottom slot to Output (6) so its live output is visible; nil when the Scripts
+// bottom slot to Output (7) so its live output is visible; nil when the Scripts
 // cursor is out of range.
 func (m *Model) runSelectedScript() tea.Cmd {
 	vs := m.visibleScripts()
