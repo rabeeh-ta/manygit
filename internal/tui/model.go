@@ -117,10 +117,11 @@ type Model struct {
 	// refreshed a beat after a fetch burst settles, rotated by a ticker.
 	newsFeed     []string
 	newsIndex    int
-	newsOffset   int // scroll offset for the full-screen news overlay (n)
-	newsGen      int // bumped per refresh; guards stale refreshes/ticks
-	newsDebounce int // bumped on each fetch; the latest debounce tick refreshes
-	newsLoading  bool
+	newsOffset   int       // scroll offset for the full-screen news overlay (n)
+	newsGen      int       // bumped per refresh; guards stale refreshes/ticks
+	newsDebounce int       // bumped on each fetch; the latest debounce tick refreshes
+	newsLoading  bool      // a summarize is in flight (shows "summarizing..." in the top bar)
+	newsCachedAt time.Time // when the current headlines were summarized; gates re-summarizing (newsTTL)
 
 	// PRs view (key 4, in the top-right slot beside Branches): GitHub pull requests
 	// via the gh CLI. Two lists — mine and review-requested — toggled by `m`;
@@ -233,7 +234,7 @@ func New(cfg config.Config, repos []discover.Repo, scripts []discover.Script) Mo
 		conc = 1
 	}
 	applyTheme(themeByName(cfg.Theme)) // set the themeable styles from config
-	return Model{
+	m := Model{
 		cfg:     cfg,
 		repos:   vms,
 		scripts: scripts,
@@ -242,6 +243,13 @@ func New(cfg config.Config, repos []discover.Repo, scripts []discover.Script) Mo
 		// topView/bottomView default to their zero values (tvBranches / bvGraph):
 		// the top-right shows Branches and the bottom shows Graph on launch.
 	}
+	// Reuse a fresh on-disk news summary so opening the app doesn't re-summarize
+	// every time (see newsTTL). Ignored when it's for a different window or repo set.
+	if c, ok := loadNewsCache(); ok && c.Days == cfg.NewsDays && c.Sig == repoSig(vms) && time.Since(c.CachedAt) < newsTTL {
+		m.newsFeed = c.Headlines
+		m.newsCachedAt = c.CachedAt
+	}
+	return m
 }
 
 // Init loads local status for every repo (fast, ungated), then fires a
@@ -259,5 +267,8 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, c)
 	}
 	cmds = append(cmds, ghProbeCmd()) // resolve gh availability, then load PRs
+	if len(m.newsFeed) > 1 {
+		cmds = append(cmds, newsTickCmd(m.newsGen)) // rotate cached headlines
+	}
 	return tea.Batch(cmds...)
 }

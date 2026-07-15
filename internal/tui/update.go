@@ -62,6 +62,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.err == nil {
 				m.newsFeed = msg.headlines
 				m.newsIndex = 0
+				// Stamp the refresh so it isn't re-summarized for newsTTL, and
+				// persist non-empty headlines so a restart reuses them too.
+				m.newsCachedAt = time.Now()
+				if len(msg.headlines) > 0 {
+					saveNewsCache(cachedNews{
+						CachedAt:  m.newsCachedAt,
+						Days:      m.cfg.NewsDays,
+						Sig:       repoSig(m.repos),
+						Headlines: msg.headlines,
+					})
+				}
 			}
 			if len(m.newsFeed) > 1 {
 				return m, newsTickCmd(m.newsGen)
@@ -754,13 +765,13 @@ func (m *Model) settingsSelect() tea.Cmd {
 		if harness.Available(r.val) {
 			m.cfg.Harness = r.val
 			m.saveConfig()
-			return m.maybeRefreshNews() // a newly-picked harness can generate news
+			return m.forceRefreshNews() // a newly-picked harness re-summarizes now
 		}
 	case skNewsDays:
 		if d, err := strconv.Atoi(r.val); err == nil {
 			m.cfg.NewsDays = d
 			m.saveConfig()
-			return m.maybeRefreshNews() // apply the new window immediately
+			return m.forceRefreshNews() // apply the new window immediately
 		}
 	case skGlyph:
 		m.cfg.StatusGlyphs = r.val

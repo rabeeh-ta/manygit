@@ -2,7 +2,12 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"hash/fnv"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,7 +20,67 @@ import (
 const (
 	newsRotate       = 12 * time.Second // top-bar headline dwell time (slow enough to read)
 	newsMaxHeadlines = 10               // hard cap on headlines, in case the harness overshoots
+	newsTTL          = 4 * time.Hour    // reuse a cached summary this long before re-summarizing
 )
+
+// cachedNews is the on-disk news cache: ONE file, overwritten on every refresh
+// (never appended), so it can't grow. Reused across restarts while it's fresh.
+type cachedNews struct {
+	CachedAt  time.Time `json:"cached_at"`
+	Days      int       `json:"days"` // the NewsDays window it summarized
+	Sig       string    `json:"sig"`  // repo-set signature (see repoSig)
+	Headlines []string  `json:"headlines"`
+}
+
+// newsCachePath is the single cache file, under $XDG_CACHE_HOME/manygit (or
+// ~/.cache/manygit).
+func newsCachePath() string {
+	base := os.Getenv("XDG_CACHE_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return filepath.Join(".cache", "manygit", "news.json")
+		}
+		base = filepath.Join(home, ".cache")
+	}
+	return filepath.Join(base, "manygit", "news.json")
+}
+
+// loadNewsCache reads the news cache; ok=false when it's missing or unreadable.
+func loadNewsCache() (cachedNews, bool) {
+	data, err := os.ReadFile(newsCachePath())
+	if err != nil {
+		return cachedNews{}, false
+	}
+	var c cachedNews
+	if err := json.Unmarshal(data, &c); err != nil {
+		return cachedNews{}, false
+	}
+	return c, true
+}
+
+// saveNewsCache overwrites the single cache file (best-effort). It never appends,
+// so the cache stays one small file no matter how often the news refreshes.
+func saveNewsCache(c cachedNews) {
+	path := newsCachePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	if data, err := json.Marshal(c); err == nil {
+		_ = os.WriteFile(path, data, 0o644)
+	}
+}
+
+// repoSig is a stable signature of the repo set, so a summary cached for one scan
+// root is never shown for a different one.
+func repoSig(repos []*repoVM) string {
+	h := fnv.New64a()
+	for _, r := range repos {
+		_, _ = h.Write([]byte(r.repo.Path))
+		_, _ = h.Write([]byte{0})
+	}
+	return strconv.FormatUint(h.Sum64(), 16)
+}
 
 // newsRepo is the minimal per-repo info the news refresh needs (captured up
 // front so the background command doesn't touch the live Model).
@@ -111,9 +176,26 @@ func newsDebounceCmd(gen int) tea.Cmd {
 	return tea.Tick(2*time.Second, func(time.Time) tea.Msg { return newsDebounceMsg{gen: gen} })
 }
 
-// maybeRefreshNews starts a news refresh if a harness is available and one isn't
-// already in flight; nil otherwise.
+// newsFresh reports whether the current headlines were summarized within newsTTL,
+// so a re-summarize (a slow AI-harness call) can be skipped — this is what stops
+// the "summarizing commits" work from running every time the app opens.
+func (m Model) newsFresh() bool {
+	return !m.newsCachedAt.IsZero() && time.Since(m.newsCachedAt) < newsTTL
+}
+
+// maybeRefreshNews starts a news refresh only when the cache is stale (older than
+// newsTTL); nil when it's still fresh. Used by the fetch-triggered refresh path so
+// repeatedly opening the app reuses the last summary instead of re-summarizing.
 func (m *Model) maybeRefreshNews() tea.Cmd {
+	if m.newsFresh() {
+		return nil
+	}
+	return m.forceRefreshNews()
+}
+
+// forceRefreshNews starts a news refresh regardless of cache freshness (used when
+// the harness or the news window changes). nil when no harness or already loading.
+func (m *Model) forceRefreshNews() tea.Cmd {
 	if m.newsLoading || !harness.Available(m.cfg.Harness) {
 		return nil
 	}

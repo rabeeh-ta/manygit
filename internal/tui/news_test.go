@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -87,5 +88,60 @@ func TestMaybeRefreshNews_NoHarness(t *testing.T) {
 	}
 	if m.newsLoading {
 		t.Error("no refresh should leave newsLoading false")
+	}
+}
+
+// A fresh on-disk cache is loaded on startup and reused (no re-summarize), so
+// opening the app repeatedly doesn't re-run the harness.
+func TestNewsCache_LoadFreshIntoModel(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cfg, repos := twoRepos(t)
+	cfg.NewsDays = 3
+	sig := repoSig(New(cfg, repos, nil).repos) // deterministic for this repo set
+
+	saveNewsCache(cachedNews{CachedAt: time.Now(), Days: 3, Sig: sig, Headlines: []string{"shipped X", "fixed Y"}})
+
+	m := New(cfg, repos, nil)
+	if len(m.newsFeed) != 2 || m.newsFeed[0] != "shipped X" {
+		t.Fatalf("a fresh matching cache should load, got %v", m.newsFeed)
+	}
+	if !m.newsFresh() {
+		t.Error("a just-cached feed should be fresh")
+	}
+	if c := m.maybeRefreshNews(); c != nil {
+		t.Error("fresh news should skip the refresh (no harness call)")
+	}
+}
+
+// A cache is ignored when it's stale, for a different window, or for a different
+// repo set — each of those falls through to a normal refresh.
+func TestNewsCache_IgnoredWhenStaleOrMismatched(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cfg, repos := twoRepos(t)
+	cfg.NewsDays = 3
+	sig := repoSig(New(cfg, repos, nil).repos)
+	heads := []string{"x"}
+
+	for name, c := range map[string]cachedNews{
+		"stale":       {CachedAt: time.Now().Add(-5 * time.Hour), Days: 3, Sig: sig, Headlines: heads},
+		"wrong-days":  {CachedAt: time.Now(), Days: 7, Sig: sig, Headlines: heads},
+		"wrong-repos": {CachedAt: time.Now(), Days: 3, Sig: "deadbeef", Headlines: heads},
+	} {
+		saveNewsCache(c)
+		if m := New(cfg, repos, nil); len(m.newsFeed) != 0 {
+			t.Errorf("%s cache should be ignored, got %v", name, m.newsFeed)
+		}
+	}
+}
+
+// The cache is a single file that's overwritten, never appended — so storage
+// can't grow with every refresh.
+func TestNewsCache_Overwrites(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	saveNewsCache(cachedNews{CachedAt: time.Now(), Days: 3, Sig: "a", Headlines: []string{"one"}})
+	saveNewsCache(cachedNews{CachedAt: time.Now(), Days: 3, Sig: "a", Headlines: []string{"two", "three"}})
+	c, ok := loadNewsCache()
+	if !ok || len(c.Headlines) != 2 || c.Headlines[0] != "two" {
+		t.Fatalf("cache should hold only the latest write, got %+v ok=%v", c, ok)
 	}
 }

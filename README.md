@@ -52,7 +52,7 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `d` / `D` | discard changes (confirm): `d` tracked only · `D` also deletes untracked files |
 | `f` / `r` | fetch one / refetch all |
 | `g` | full-screen commit graph |
-| `n` | full-screen news feed — all headlines at once |
+| `n` | full-screen news feed — all headlines at once (AI-summarized, cached ~4h) |
 | `t` | toggle each repo's latest tag inline, after the branch (off by default) |
 | `F` | show only repos with changes / ahead / behind |
 | `/` | filter the focused list by name — repos, scripts, or branches (type `feat` to find a remote branch among hundreds) |
