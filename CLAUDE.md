@@ -58,6 +58,15 @@ Ported functions keep their Go names on purpose — grep the name in both files.
 - **The demo intentionally diverges in exactly two places**, both because it runs
   in a browser: `q` and `o` explain themselves instead of quitting / spawning an
   editor. Keep those, and keep them honest.
+- **`runInit()` is a port of `Init()`, not an animation.** First focus replays the
+  real launch: every repo unloaded and immediately fetching, so a row goes
+  `.` → `~` → its glyph as the local status read lands and then the fetch returns;
+  `loadContextCmd` fills Branches/Graph; `ghProbeCmd` reveals the badge and
+  `github:`; the harness summarises. Only the *durations* are invented — the
+  order is Init's, and the fetch waves are `cfg.Concurrency` (8). Anything gated
+  on `repoVM.loaded` in the Go must be gated here too: an unloaded row has no
+  branch and no dirty badge, because `r.status` is the zero value until
+  `statusMsg` lands.
 - The demo fakes git. It must never claim otherwise.
 
 ### Verifying a demo change

@@ -418,7 +418,10 @@
   // currentBranch is the branch label a row shows: "detached" when the head is,
   // otherwise the branch name. `/` matches this string, so it has to be the same
   // one renderRow draws.
-  function currentBranch(r) { return r.detached ? "detached" : r.b; }
+  function currentBranch(r) {
+    if (!r.loaded) return ""; // r.status is the zero value until statusMsg lands
+    return r.detached ? "detached" : r.b;
+  }
 
   // repoHaystack is the text `/` matches a repo row against: what the row shows —
   // its name and current branch, plus the latest tag while `t` has tags inline.
@@ -530,13 +533,17 @@
     if (r.behind > 0) return cy(dn + r.behind);
     return gr("ok");
   }
-  function dirtyBadge(r) { return r.dirty > 0 ? og("*" + r.dirty) : ""; }
+  function dirtyBadge(r) { return r.loaded && r.dirty > 0 ? og("*" + r.dirty) : ""; }
 
   function renderRow(i, r) {
     var on = i === S.cursor && S.focus === "repos";
     var mark = i === S.cursor;
-    var name = esc(r.n) + d(" (" + currentBranch(r) + ")") +
-      (S.showTags && r.tag ? d(" (" + r.tag + ")") : "");
+    // fitNameSuffixes only appends a suffix when it's non-empty — an unloaded repo
+    // has no branch yet, and " ()" is not a thing the real tool ever draws.
+    var br = currentBranch(r);
+    var name = esc(r.n) +
+      (br ? d(" (" + br + ")") : "") +
+      (S.showTags && r.loaded && r.tag ? d(" (" + r.tag + ")") : "");
     return (
       '<div class="row" data-on="' + (on ? 1 : 0) + '" data-mark="' + (mark ? 1 : 0) + '">' +
       '<span class="row__cur">' + (mark ? "> " : "  ") + "</span>" +
@@ -609,7 +616,7 @@
   // Init's, and the fetch waves are the concurrency semaphore (cfg.Concurrency,
   // 8) letting eight repos through at a time.
   var CONCURRENCY = 8;
-  function boot() {
+  function runInit() {
     if (S.booted) return;
     S.booted = true;
 
@@ -627,7 +634,7 @@
     render();
 
     var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) { bootFinish(repos); return; } // no reveal; land on the loaded state
+    if (reduce) { initSettled(repos); return; } // no reveal; land on the loaded state
 
     // statusCmd per repo: fast local reads, ungated, so they land quickly
     repos.forEach(function (r, i) {
@@ -652,8 +659,8 @@
     }, 2100);
   }
 
-  // bootFinish is the settled state, with no reveal — used under reduced motion.
-  function bootFinish(repos) {
+  // initSettled is the state Init leaves behind, with no reveal — reduced motion.
+  function initSettled(repos) {
     repos.forEach(function (r) { r.loaded = true; r.fetching = false; });
     S.ghProbed = true; S.ghInstalled = true; S.ghAvailable = true; S.ghUser = "rabeeh-ta";
     S.prLoaded = true;
@@ -1484,11 +1491,10 @@
     var n = parseFloat(probe);
     if (!isNaN(n) && n > 4) LINE_H = n;
 
-    loadContext();
-    render();
+    render(); // pre-Init: names + dots only. runInit() fills the rest on first focus.
 
     el.term.addEventListener("keydown", onKey);
-    el.term.addEventListener("focus", function () { boot(); render(); });
+    el.term.addEventListener("focus", function () { runInit(); render(); });
     el.term.addEventListener("blur", render);
     window.addEventListener("resize", render);
 
@@ -1498,7 +1504,7 @@
     Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
       b.addEventListener("click", function (e) {
         if (e.detail > 0) el.term.focus();
-        boot(); // a keyboard-activated button never fires the term's focus event
+        runInit(); // a keyboard-activated button never fires the term's focus event
         handleKey(b.getAttribute("data-key"));
         render();
       });
