@@ -73,14 +73,22 @@
     "k8s-manifests": ["staging", "main", "prod"]
   };
 
+  function uniq(a) {
+    return a.filter(function (v, i) { return a.indexOf(v) === i; });
+  }
+
+  // `git branch --all` never lists the same ref twice, so neither may this. The
+  // seed lists below can name the current branch themselves — checking out
+  // feat/wip on a repo whose fallback is [r.b, "feat/wip"] used to yield
+  // ["feat/wip", "feat/wip"] and render two rows both marked (current).
   function branchesFor(r) {
-    var locals = BRANCHES[r.n] ? BRANCHES[r.n].slice() : [r.b, "feat/wip"];
+    var locals = uniq(BRANCHES[r.n] ? BRANCHES[r.n].slice() : [r.b, "feat/wip"]);
     if (locals.indexOf(r.b) < 0) locals.unshift(r.b);
     var out = locals.map(function (n) {
       return { name: n, remote: false, current: n === r.b };
     });
     if (!r.remote) return out;
-    var rem = locals.concat(["release/1.x", "dependabot/npm_and_yarn/lodash-4.17.21", "revert-118-hotfix"]);
+    var rem = uniq(locals.concat(["release/1.x", "dependabot/npm_and_yarn/lodash-4.17.21", "revert-118-hotfix"]));
     rem.forEach(function (n) {
       out.push({ name: "origin/" + n, remote: true, current: false });
     });
