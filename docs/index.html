@@ -32,6 +32,21 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="assets/site.css" />
+
+    <!-- Set the ground before first paint. Dark is the default and the OS
+         preference is deliberately NOT followed — manygit is a terminal tool and
+         dark is the house style; light is there for people who want it. Only a
+         saved choice overrides. Inline and before the stylesheet, or the page
+         flashes the wrong ground while this file is still being fetched. -->
+    <script>
+      (function () {
+        var m = "dark";
+        try {
+          m = localStorage.getItem("manygit.mode") || "dark";
+        } catch (e) {}
+        document.documentElement.setAttribute("data-mode", m);
+      })();
+    </script>
   </head>
 
   <body>
@@ -44,7 +59,8 @@
           <span class="bar" aria-hidden="true"><i></i><i></i><i></i></span>
           <span class="wordmark__txt">manygit</span>
         </a>
-        <span class="chip">v1.0.6</span>
+        <span class="chip chip--ver">v1.0.6</span>
+        <button class="chip chip--btn" type="button" id="mode" aria-live="polite">light</button>
         <a class="chip" href="https://github.com/rabeeh-ta/manygit">github</a>
       </div>
     </header>

@@ -95,6 +95,74 @@
   --error: #da3333;
 }
 
+/* ------------------------------------------------------------ light mode -- */
+
+/* manygit never paints a background — it colors the chrome and takes the ground
+   from your terminal (theme.go). So this isn't a reskin of the tool: it is the
+   tool in a light terminal, which is what you get if that's what you run.
+   `data-mode` (the ground) and `data-theme` (the chrome) are separate axes and
+   compose: six themes x two grounds.
+
+   theme.go's palettes are tuned for a dark terminal and none of their accents
+   clear 4.5:1 on paper, so each is darkened here — same hue and saturation,
+   lower lightness, measured rather than guessed. serika's #e2b714 becomes a dark
+   gold because a yellow cannot be both vivid and dark; that's the honest cost. */
+:root[data-mode="light"] {
+  --bg: #eeede8;
+  --surface: #e6e5df;
+  --ink: #2b2d30; /* 11.78:1 */
+
+  /* status column, darkened for paper — still unthemed, still fixed */
+  --c-green: #2e7936; /* 4.59:1 */
+  --c-yellow: #7d691c; /* 4.58:1 */
+  --c-cyan: #277481; /* 4.59:1 */
+  --c-magenta: #9040d8; /* 4.58:1 */
+  --c-orange: #ae500e; /* 4.53:1 */
+}
+
+:root[data-mode="light"][data-theme="default"] {
+  --accent: #0072a6; /* 4.53:1 */
+  --group: #0066dc; /* 4.55:1 */
+  --dim: #585858; /* 6.07:1 */
+  --muted: #585858;
+  --error: #c93030; /* 4.54:1 */
+}
+:root[data-mode="light"][data-theme="serika_dark"] {
+  --accent: #81680b; /* 4.57:1 */
+  --group: #81680b;
+  --dim: #646669; /* 4.91:1 */
+  --muted: #646669;
+  --error: #c33846; /* 4.51:1 */
+}
+:root[data-mode="light"][data-theme="dracula"] {
+  --accent: #8639f4; /* 4.59:1 */
+  --group: #8639f4;
+  --dim: #6272a4; /* 4.01:1 — chrome only */
+  --muted: #5a6a9c; /* 4.51:1 */
+  --error: #d60000; /* 4.64:1 */
+}
+:root[data-mode="light"][data-theme="nord"] {
+  --accent: #357385; /* 4.54:1 */
+  --group: #357385;
+  --dim: #7e889b; /* 3.05:1 — chrome only */
+  --muted: #626c7e; /* 4.52:1 */
+  --error: #b24852; /* 4.54:1 */
+}
+:root[data-mode="light"][data-theme="catppuccin"] {
+  --accent: #8b38ed; /* 4.61:1 */
+  --group: #8b38ed;
+  --dim: #7f849c; /* 3.15:1 — chrome only */
+  --muted: #656a83; /* 4.54:1 */
+  --error: #d01549; /* 4.61:1 */
+}
+:root[data-mode="light"][data-theme="8008"] {
+  --accent: #d30d49; /* 4.57:1 */
+  --group: #d30d49;
+  --dim: #7b899c; /* 3.04:1 — chrome only */
+  --muted: #5f6c7f; /* 4.55:1 */
+  --error: #cf2626; /* 4.53:1 */
+}
+
 /* ------------------------------------------------------------- baseline -- */
 
 *,
@@ -199,6 +267,20 @@ a.chip {
   border-bottom: 0;
 }
 a.chip:hover {
+  color: var(--accent);
+}
+
+/* the ground toggle wears the same bracket as everything else in the masthead */
+.chip--btn {
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.chip--btn:hover {
   color: var(--accent);
 }
 
@@ -1001,10 +1083,30 @@ a.chip:hover {
   }
 }
 
-/* At 320px the wordmark + the two chips overrun the 16px gaps by a few px. */
-@media (max-width: 420px) {
+/* The [ v1.0.6 ] [ light ] [ github ] run needs 392px at desktop sizing, so it
+   clears no phone. Buy the space back off the wordmark rather than dropping a
+   chip — the three-chip run is the masthead. */
+@media (max-width: 430px) {
   .masthead__in {
     gap: 9px;
+  }
+  .wordmark {
+    gap: 8px;
+  }
+  .wordmark__txt {
+    font-size: 17px;
+  }
+  .bar {
+    width: 20px;
+    height: 13px;
+  }
+}
+/* Under ~360px even that isn't enough. The version is the one that can go: it's
+   repeated in Install and behind the releases link, whereas the ground toggle and
+   the repo link are the only ways to reach those from here. */
+@media (max-width: 365px) {
+  .chip--ver {
+    display: none;
   }
 }
 

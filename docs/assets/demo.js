@@ -1288,7 +1288,33 @@
     render();
   }
 
+  // The ground is the SITE's, not manygit's: the tool has no background setting —
+  // it inherits your terminal's (theme.go). So this is its own axis from the
+  // demo's `?` theme picker, and the two compose. The <head> script has already
+  // applied the stored/OS choice before first paint; this only wires the toggle.
+  function wireMode() {
+    var btn = document.getElementById("mode");
+    if (!btn) return;
+    var meta = document.querySelector('meta[name="theme-color"]');
+    var root = document.documentElement;
+    function paint() {
+      var light = root.getAttribute("data-mode") === "light";
+      btn.textContent = light ? "dark" : "light"; // the label is what you'd get
+      btn.setAttribute("aria-label", "Switch to a " + (light ? "dark" : "light") + " terminal");
+      if (meta) meta.setAttribute("content", light ? "#eeede8" : "#0b0b0c");
+    }
+    paint();
+    btn.addEventListener("click", function () {
+      var next = root.getAttribute("data-mode") === "light" ? "dark" : "light";
+      root.setAttribute("data-mode", next);
+      try { localStorage.setItem("manygit.mode", next); } catch (e) {}
+      paint();
+    });
+  }
+
   function boot() {
+    wireMode(); // site chrome — must work even if the demo doesn't
+
     el.term = document.getElementById("term");
     el.screen = document.getElementById("screen");
     el.say = document.getElementById("say");

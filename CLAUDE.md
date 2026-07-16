@@ -47,6 +47,14 @@ Ported functions keep their Go names on purpose — grep the name in both files.
 - **`--dim` is not a prose colour.** It's the terminal's chrome colour and fails
   WCAG AA on this background in several themes. Page text uses `--muted`, which is
   each theme's `--dim` lifted to ≥4.5:1. Terminal-internal text keeps `--dim`.
+- **Two independent axes: `data-mode` × `data-theme`.** `data-mode` (light/dark)
+  is the *ground* and belongs to the site, because manygit has no background
+  setting — it inherits your terminal's. `data-theme` is the *chrome* and is
+  manygit's. They compose: six themes × two grounds = twelve palettes, and every
+  one must clear AA. A new theme means adding **both** a
+  `:root[data-theme=…]` block and a `:root[data-mode="light"][data-theme=…]` one
+  — theme.go's accents are tuned for a dark terminal and none of them pass on
+  paper unmodified. Darken hue-preserving and **measure**; don't eyeball.
 - **The demo intentionally diverges in exactly two places**, both because it runs
   in a browser: `q` and `o` explain themselves instead of quitting / spawning an
   editor. Keep those, and keep them honest.
