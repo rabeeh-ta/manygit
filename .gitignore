@@ -1,3 +1,6 @@
 /manygit
 /dist/
 *.out
+
+# local screenshots of docs/ — review artifacts, not part of the site
+/preview-shots/

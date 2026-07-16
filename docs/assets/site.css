@@ -1,0 +1,987 @@
+/* manygit — landing page
+ *
+ * Palette note: manygit never paints a background. It colors only the "chrome"
+ * (accent / group / dim / error) and inherits everything else from your
+ * terminal — see internal/tui/theme.go. This page does the same: the ground
+ * stays near-black in every theme, and only the four chrome variables swap.
+ * Every hex below marked REAL is copied verbatim from themeList in theme.go.
+ */
+
+/* ---------------------------------------------------------------- tokens -- */
+
+:root {
+  /* ground — "your terminal", not a theme value */
+  --bg: #0b0b0c;
+  --surface: #101012;
+  --ink: #d1d0c5; /* serika's text; a neutral terminal foreground */
+
+  /* chrome — swapped per theme, values REAL from theme.go. --dim is a terminal
+     *chrome* colour (borders, inactive tabs, the TUI's own dim text); it is not
+     a prose colour and several themes put it under 4.5:1 on this ground. */
+  --accent: #e2b714;
+  --group: #e2b714;
+  --dim: #646669;
+  --error: #ca4754;
+
+  /* --muted is the page's secondary *reading* colour: the same intent as --dim
+     but lifted to clear WCAG AA (4.5:1) on --bg at the 11-13px this page sets.
+     theme.go's #646669 measures 3.42:1 and its "default" #585858 only 2.77:1. */
+  --muted: #838588;
+
+  /* status column — deliberately NOT themed, mirroring theme.go's comment:
+     "semantic status colors are intentionally NOT themed so they stay
+     readable across themes". Red is the exception: theme.go paints errors from
+     t.Error, so `.rd` follows --error rather than a fixed status colour. */
+  --c-green: #5ec269;
+  --c-yellow: #d7ba4a;
+  --c-cyan: #4fb8c9;
+  --c-magenta: #b47ee5;
+  --c-orange: #f0883e;
+
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --display: "Doto", var(--mono);
+
+  --rule: color-mix(in srgb, var(--dim) 34%, transparent);
+  --lane: 148px; /* the right-aligned label column */
+  --gap: 40px;
+  --measure: 1180px;
+
+  --t: 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Each block: --dim/--accent/--group/--error are theme.go's values verbatim;
+   --muted is that theme's --dim lifted to >=4.5:1 on --bg (measured, not eyeballed).
+   nord / catppuccin / 8008 already clear AA, so their --muted is their own --dim. */
+:root[data-theme="default"] {
+  --accent: #00afff;
+  --group: #4a9eff;
+  --dim: #585858; /* 2.77:1 */
+  --muted: #7c7c7c; /* 4.71:1 */
+  --error: #cd3131;
+}
+:root[data-theme="serika_dark"] {
+  --accent: #e2b714;
+  --group: #e2b714;
+  --dim: #646669; /* 3.42:1 */
+  --muted: #838588; /* 5.32:1 */
+  --error: #ca4754;
+}
+:root[data-theme="dracula"] {
+  --accent: #bd93f9;
+  --group: #bd93f9;
+  --dim: #6272a4; /* 4.18:1 */
+  --muted: #7a88b4; /* 5.63:1 */
+  --error: #ff5555;
+}
+:root[data-theme="nord"] {
+  --accent: #88c0d0;
+  --group: #88c0d0;
+  --dim: #929aaa;
+  --muted: #929aaa; /* 6.96:1 */
+  --error: #bf616a;
+}
+:root[data-theme="catppuccin"] {
+  --accent: #cba6f7;
+  --group: #cba6f7;
+  --dim: #7f849c;
+  --muted: #8891a6; /* 6.23:1 */
+  --error: #f38ba8;
+}
+:root[data-theme="8008"] {
+  --accent: #f44c7f;
+  --group: #f44c7f;
+  --dim: #939eae;
+  --muted: #939eae; /* 7.25:1 */
+  --error: #da3333;
+}
+
+/* ------------------------------------------------------------- baseline -- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.62;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
+  transition: color var(--t);
+}
+
+/* The underline tracks the link's own colour rather than the (much fainter)
+   --rule, so inline links in --muted footer text stay distinguishable. */
+a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 55%, transparent);
+  transition: border-color var(--t), color var(--t);
+}
+a:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.shell {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+/* visually hidden, still announced */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+.skip:focus {
+  left: 12px;
+  top: 12px;
+  z-index: 99;
+  background: var(--accent);
+  color: var(--bg);
+  padding: 8px 14px;
+  border: 0;
+}
+
+/* -- shared atoms ---------------------------------------------------------- */
+
+/* [ chip ] — manygit renders its own panel titles as "[1] Repos"; the bracket
+   is the product's structural device, not decoration. */
+.chip {
+  display: inline-flex;
+  gap: 0.5em;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  transition: color var(--t);
+}
+.chip::before {
+  content: "[";
+  color: var(--muted);
+}
+.chip::after {
+  content: "]";
+  color: var(--muted);
+}
+a.chip {
+  border-bottom: 0;
+}
+a.chip:hover {
+  color: var(--accent);
+}
+
+/* The mark is manygit's own layout at 24x15: one tall pane on the left (Repos,
+   the one you act on, so it carries the accent) against the stacked right column
+   (Branches/PRs over Graph/Changes/Output). Same shape as .term__body below and
+   as the favicon. It follows the theme because the real panes do. */
+.bar {
+  width: 24px;
+  height: 15px;
+  flex: none;
+  display: grid;
+  grid-template-columns: 9px 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+}
+.bar i {
+  background: var(--dim);
+  border-radius: 1px;
+  transition: background var(--t);
+}
+.bar i:first-child {
+  grid-row: 1 / 3;
+  background: var(--accent);
+}
+
+/* -------------------------------------------------------------- masthead -- */
+
+/* Opaque, not frosted: --bg never changes between themes, so a blur would cost a
+   compositor layer to tint one flat colour with another. The hairline rule is
+   what separates the header from the page. */
+.masthead {
+  border-bottom: 1px solid var(--rule);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--bg);
+}
+
+.masthead__in {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 56px;
+}
+
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 0;
+  margin-right: auto;
+}
+.wordmark__txt {
+  font-family: var(--display);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+/* ------------------------------------------------------------------ hero -- */
+
+/* Budgeted so the masthead, the hero and the whole terminal fit one 900px-tall
+   viewport: the demo is the thesis and shouldn't need a scroll to be found. */
+.hero {
+  padding: clamp(34px, 5vw, 62px) 0 clamp(18px, 2.5vw, 28px);
+}
+
+.hero__grid {
+  display: grid;
+  grid-template-columns: var(--lane) minmax(0, 1fr);
+  gap: var(--gap);
+}
+
+/* The right-aligned label column, lifted from the brief's first reference: the
+   labels ARE the manual's sections, so they're h2s here, not decoration. */
+.lane {
+  margin: 0;
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  line-height: 1.62;
+  padding-top: 0.5em;
+  transition: color var(--t);
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(26px, 3.4vw, 41px);
+  line-height: 1.12;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  max-width: 21ch;
+}
+.hero h1 em {
+  font-style: normal;
+  color: var(--accent);
+  transition: color var(--t);
+}
+
+.hero__sub {
+  margin: 20px 0 0;
+  max-width: 64ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+  transition: color var(--t);
+}
+.hero__sub strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+.hero__sub code {
+  color: var(--ink);
+  font-size: 0.94em;
+  white-space: nowrap;
+}
+
+.hero__cta {
+  margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  align-items: center;
+}
+
+/* -- copyable command ------------------------------------------------------ */
+
+/* fit-content so the copy button sits against the command, not stranded at the
+   far edge of the column */
+.cmd {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface);
+  overflow: hidden;
+  width: fit-content;
+  max-width: 100%;
+  transition: border-color var(--t);
+}
+.cmd:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.cmd__txt {
+  padding: 11px 14px;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 12.5px;
+  scrollbar-width: none;
+}
+.cmd__txt::-webkit-scrollbar {
+  display: none;
+}
+.cmd__sigil {
+  color: var(--accent);
+  user-select: none;
+  margin-right: 0.75em;
+  transition: color var(--t);
+}
+/* a real shell comment, so the annotation can't be mistaken for the command */
+.cmd__note {
+  color: var(--muted);
+  user-select: none;
+  transition: color var(--t);
+}
+
+.cmd__copy {
+  flex: none;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 0 16px;
+  cursor: pointer;
+  transition: color var(--t), background var(--t);
+}
+.cmd__copy:hover {
+  color: var(--bg);
+  background: var(--accent);
+}
+.cmd__copy[data-copied="1"] {
+  color: var(--bg);
+  background: var(--c-green);
+}
+
+/* ------------------------------------------------------------------ demo -- */
+
+.demo {
+  padding: 0 0 clamp(48px, 7vw, 84px);
+}
+
+.demo__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 11.5px;
+  transition: color var(--t);
+}
+
+.demo__scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border-radius: 8px;
+}
+
+/* A TUI has no keyboard on a phone and doesn't reflow, so the cue changes:
+   swipe the grid, drive it from the keypad. */
+.demo__cue--tap {
+  display: none;
+}
+@media (hover: none), (max-width: 720px) {
+  .demo__cue--key {
+    display: none;
+  }
+  .demo__cue--tap {
+    display: inline-flex;
+  }
+}
+
+/* the terminal itself. Fixed min-width so the pane grid keeps its proportions;
+   narrow screens swipe rather than reflow (a TUI doesn't reflow either). */
+.term {
+  min-width: 720px;
+  height: 448px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 14px 16px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  position: relative;
+  cursor: text;
+  transition: border-color var(--t), box-shadow var(--t);
+}
+#screen {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+/* A ring, not a bloom: .demo__scroll's overflow-x makes overflow-y `auto` too, so
+   it clips on all four sides and any glow would render half-cropped. */
+.term:focus {
+  outline: 0;
+  border-color: color-mix(in srgb, var(--accent) 62%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+/* Click-to-focus veil, untinted. This is the page's hero and has to read as alive
+   at first glance; a scrim would also drop the terminal's own dim text below 3:1.
+   The cue chip carries the "not listening yet" message on its own. */
+.term__veil {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: transparent;
+  transition: opacity var(--t);
+}
+.term:focus .term__veil {
+  opacity: 0;
+  pointer-events: none;
+}
+.term__veil span {
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: var(--bg);
+  padding: 9px 18px;
+  border-radius: 4px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  transition: color var(--t), border-color var(--t);
+}
+
+/* -- terminal internals ---------------------------------------------------- */
+
+.term__top {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  flex: none;
+  white-space: nowrap;
+}
+.term__brand {
+  color: var(--accent);
+  font-weight: 700;
+  flex: none;
+  transition: color var(--t);
+}
+.term__news {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.term__badge {
+  flex: none;
+}
+
+.term__body {
+  display: grid;
+  grid-template-columns: 38fr 62fr;
+  gap: 8px;
+  margin-top: 1.5em;
+  flex: 1;
+  min-height: 0;
+}
+/* helpView / graphView / newsView are the whole screen — no bars above them, so
+   the pane title's -0.72em lift is absorbed by .term's own 14px padding-top. */
+.term__body--one {
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 0;
+}
+/* zoomedView is different: it keeps the brand bar above the pane, so the title
+   still needs its clearance or it lands on top of the bar. */
+.term__body--zoom {
+  grid-template-columns: minmax(0, 1fr);
+}
+.term__col {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+/* Repos over Scripts; Branches/PRs over Graph/Changes/Output.
+   Ratios mirror view.go: top slot = 40% of the right column. */
+.term__col--l {
+  grid-template-rows: 1fr 132px;
+}
+.term__col--r {
+  grid-template-rows: 40fr 60fr;
+}
+
+.term__bot {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-top: 10px;
+  flex: none;
+  white-space: nowrap;
+}
+.term__status {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.term__ind {
+  flex: none;
+  display: flex;
+  gap: 18px;
+}
+
+/* -- pane ------------------------------------------------------------------ */
+
+/* overflow must stay visible: the title sits at a negative offset so it splices
+   into the top border, the way lipgloss draws ╭─[1] Repos───╮. The body clips
+   its own content instead. */
+.pane {
+  position: relative;
+  border: 1px solid var(--dim);
+  border-radius: 6px;
+  padding: 7px 9px;
+  min-width: 0;
+  overflow: visible;
+  transition: border-color var(--t);
+}
+.pane[data-focused="1"] {
+  border-color: var(--accent);
+}
+
+/* the title spliced into the top border, like lipgloss's ╭─[1] Repos───╮ */
+.pane__title {
+  position: absolute;
+  top: -0.72em;
+  left: 9px;
+  right: 9px;
+  padding: 0 5px;
+  background: var(--bg);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  transition: color var(--t);
+}
+.pane[data-focused="1"] .pane__title {
+  color: var(--accent);
+}
+
+.pane__body {
+  height: 100%;
+  overflow: hidden;
+  white-space: pre;
+  tab-size: 4; /* Go diffs are tab-indented; 8 would push the hunk off the pane */
+}
+
+/* tab bar inside a pane title */
+.tab {
+  padding: 0 0.5em;
+}
+.tab[data-on="1"] {
+  background: var(--ink);
+  color: var(--bg);
+  font-weight: 700;
+}
+.tab[data-on="0"] {
+  color: var(--dim);
+}
+.tabdiv {
+  color: var(--dim);
+}
+.tabhint {
+  color: var(--dim);
+  padding-left: 1.5em;
+  font-weight: 400;
+}
+
+/* -- repo row: fixed cells, exactly like computeDims's column budget -------- */
+
+.row {
+  display: flex;
+  gap: 0;
+  white-space: pre;
+}
+.row__cur {
+  flex: none;
+  width: 4ch;
+}
+.row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row__dirty {
+  flex: none;
+  width: 5ch;
+  padding-left: 1ch;
+}
+.row__st {
+  flex: none;
+  width: 10ch;
+  padding-left: 1ch;
+}
+.row[data-on="1"] .row__name {
+  color: var(--accent);
+  font-weight: 700;
+}
+.row[data-mark="1"] .row__cur {
+  color: var(--dim);
+}
+.row[data-on="1"] .row__cur {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* centered empty states — renderPRsView / renderOutputView / renderChangesView
+   all call centerBlock() for these */
+.center {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  color: var(--dim);
+  gap: 0.9em;
+  white-space: normal;
+  padding: 0 8%;
+}
+
+/* -- ansi-ish text classes ------------------------------------------------- */
+
+.d {
+  color: var(--dim);
+}
+.a {
+  color: var(--accent);
+}
+.gp {
+  color: var(--group);
+  font-weight: 700;
+}
+.gr {
+  color: var(--c-green);
+}
+.yl {
+  color: var(--c-yellow);
+}
+.cy {
+  color: var(--c-cyan);
+}
+.mg {
+  color: var(--c-magenta);
+}
+.og {
+  color: var(--c-orange);
+}
+.rd {
+  color: var(--error);
+}
+.cur {
+  color: var(--accent);
+  font-weight: 700;
+}
+.rev {
+  background: var(--ink);
+  color: var(--bg);
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------- keypad -- */
+
+.keypad {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.keypad__lbl {
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: 6px;
+  transition: color var(--t);
+}
+
+.key {
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: color var(--t), border-color var(--t), background var(--t);
+}
+.key:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.key:active {
+  background: var(--accent);
+  color: var(--bg);
+}
+.key em {
+  font-style: normal;
+  color: var(--ink);
+}
+.key:hover em {
+  color: inherit;
+}
+
+/* ----------------------------------------------------------------- manual -- */
+
+.manual {
+  border-top: 1px solid var(--rule);
+}
+
+.sec {
+  display: grid;
+  grid-template-columns: var(--lane) minmax(0, 1fr);
+  gap: var(--gap);
+  padding: clamp(38px, 5vw, 60px) 0;
+  border-bottom: 1px solid var(--rule);
+  /* clears the 56px sticky masthead when jumped to via #install / #keys / … */
+  scroll-margin-top: 72px;
+}
+.sec:last-child {
+  border-bottom: 0;
+}
+
+/* Spacing owns the direct children and nothing else re-declares margin, so the
+   flow rule can't be out-specified by a later element-qualified selector. */
+.sec__body > * {
+  margin: 0;
+}
+.sec__body > * + * {
+  margin-top: 18px;
+}
+
+.sec__body p {
+  max-width: 68ch;
+  color: var(--muted);
+  line-height: 1.72;
+  transition: color var(--t);
+}
+.sec__body p strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+.sec__body code {
+  color: var(--ink);
+  font-size: 0.94em;
+  white-space: nowrap;
+}
+.sec__body h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+/* qualified with p so it outranks `.sec__body p` without reaching for !important */
+.sec__body p.sec__lede {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.6;
+  max-width: 46ch;
+  letter-spacing: -0.01em;
+}
+/* a heading introduces what follows — tighten it toward its own block */
+.sec__body > h3 + * {
+  margin-top: 10px;
+}
+.sec__body > * + h3 {
+  margin-top: 30px;
+}
+
+/* -- key table ------------------------------------------------------------- */
+
+.kt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.kt th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--rule);
+  transition: color var(--t);
+}
+.kt td {
+  padding: 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--dim) 16%, transparent);
+  vertical-align: top;
+  color: var(--muted);
+  transition: color var(--t);
+}
+.kt tr:last-child td {
+  border-bottom: 0;
+}
+.kt__k {
+  width: 10ch;
+  padding-right: 16px !important;
+  color: var(--ink) !important;
+  white-space: nowrap;
+}
+.kt__k b {
+  font-weight: 600;
+}
+
+/* The status legend reuses the table but colors the glyph cell. `.kt td` sets a
+   dim color at (0,1,1); a bare `.gr` is (0,1,0) and would lose, so the semantic
+   colors are re-stated here at (0,2,1) rather than reached for with !important. */
+.kt__g {
+  width: 12ch;
+  padding-right: 16px !important;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.kt td.gr {
+  color: var(--c-green);
+}
+.kt td.yl {
+  color: var(--c-yellow);
+}
+.kt td.cy {
+  color: var(--c-cyan);
+}
+.kt td.mg {
+  color: var(--c-magenta);
+}
+.kt td.og {
+  color: var(--c-orange);
+}
+.kt td.rd {
+  color: var(--error);
+}
+.kt td.d {
+  color: var(--muted);
+}
+
+/* keybindings reference inside the demo's ? overlay */
+.kcols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 24px;
+}
+/* 10ch, not the Go source's Width(8): "left/right" and "no-remote" are 10 and 9
+   cells, and lipgloss's Width hard-wraps rather than overflows, so the real TUI
+   breaks those two rows mid-word. This shows the layout as intended. */
+.kcol {
+  display: inline-block;
+  width: 10ch;
+}
+
+/* ----------------------------------------------------------------- footer -- */
+
+.foot {
+  border-top: 1px solid var(--rule);
+  /* longhands only: <footer class="shell foot"> also takes .shell's
+     `padding: 0 28px`, and a `padding` shorthand here would wipe that gutter and
+     run the footer into the viewport edge below the 1180px --measure. */
+  padding-top: 32px;
+  padding-bottom: 56px;
+  display: flex;
+  gap: 18px 28px;
+  flex-wrap: wrap;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11.5px;
+  transition: color var(--t);
+}
+.foot__sp {
+  margin-left: auto;
+}
+
+/* ------------------------------------------------------------ responsive -- */
+
+@media (max-width: 860px) {
+  :root {
+    --lane: 100%;
+    --gap: 10px;
+  }
+  .hero__grid,
+  .sec {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lane {
+    text-align: left;
+    padding-top: 0;
+  }
+  .hero h1 {
+    max-width: 100%;
+  }
+  .shell {
+    padding: 0 18px;
+  }
+  /* the terminal's height must come off .term — .term__body is `flex: 1` inside
+     it, so a height here would be overridden by the flex basis and do nothing */
+  .term {
+    height: 400px;
+  }
+}
+
+@media (max-width: 560px) {
+  .foot__sp {
+    margin-left: 0;
+  }
+}
+
+/* At 320px the wordmark + the two chips overrun the 16px gaps by a few px. */
+@media (max-width: 420px) {
+  .masthead__in {
+    gap: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

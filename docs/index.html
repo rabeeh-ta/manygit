@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en" data-theme="serika_dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>manygit — one folder in, every repo underneath, on one screen</title>
+    <meta
+      name="description"
+      content="A lazygit-style terminal UI for a whole tree of git repositories. Point it at a folder and see what's ahead, behind, or dirty across every repo nested under it — then fetch, pull, push, and switch branches without leaving the list."
+    />
+    <link rel="canonical" href="https://rabeeh-ta.github.io/manygit/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="manygit — one folder in, every repo underneath, on one screen" />
+    <meta
+      property="og:description"
+      content="A lazygit-style terminal UI for a whole tree of git repositories. Try the real interface in your browser."
+    />
+    <meta property="og:url" content="https://rabeeh-ta.github.io/manygit/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#0b0b0c" />
+
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0b0c'/%3E%3Crect x='5' y='7' width='9' height='18' rx='2' fill='%23e2b714'/%3E%3Crect x='17' y='7' width='10' height='8' rx='2' fill='%23646669'/%3E%3Crect x='17' y='17' width='10' height='8' rx='2' fill='%23646669'/%3E%3C/svg%3E"
+    />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Doto:wght@400..900&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/site.css" />
+  </head>
+
+  <body>
+    <a class="skip" href="#install">Skip to install</a>
+
+    <!-- ------------------------------------------------------- masthead -- -->
+    <header class="masthead">
+      <div class="shell masthead__in">
+        <a class="wordmark" href="./" aria-label="manygit, home">
+          <span class="bar" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="wordmark__txt">manygit</span>
+        </a>
+        <span class="chip">v1.0.6</span>
+        <a class="chip" href="https://github.com/rabeeh-ta/manygit">github</a>
+      </div>
+    </header>
+
+    <main>
+      <!-- ------------------------------------------------------- hero -- -->
+      <section class="hero">
+        <div class="shell hero__grid">
+          <div class="lane">
+            <div>single binary</div>
+            <div>macOS · Linux</div>
+          </div>
+          <div>
+            <h1>One folder in. Every repo underneath, <em>on one screen</em>.</h1>
+            <p class="hero__sub">
+              Point it at a folder. manygit walks three levels down, skipping
+              <code>node_modules</code> and friends, and groups every repo it finds by its parent. It
+              shows which are <strong>ahead</strong>, <strong>behind</strong>, or
+              <strong>dirty</strong> — then fetches, pulls, pushes, and switches branches on the one
+              under the cursor, without you leaving the list.
+            </p>
+
+            <div class="hero__cta">
+              <div class="cmd">
+                <div class="cmd__txt" tabindex="0" role="group" aria-label="command, scrolls horizontally">
+                  <span class="cmd__sigil">$</span
+                  >curl -fsSL https://raw.githubusercontent.com/rabeeh-ta/manygit/main/install.sh |
+                  bash
+                </div>
+                <button
+                  class="cmd__copy"
+                  type="button"
+                  data-copy="curl -fsSL https://raw.githubusercontent.com/rabeeh-ta/manygit/main/install.sh | bash"
+                  aria-label="copy the install command"
+                >
+                  copy
+                </button>
+              </div>
+              <a class="chip" href="#install">other ways to install</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------- demo -- -->
+      <section class="demo" aria-label="Interactive demo">
+        <div class="shell">
+          <div class="demo__head">
+            <span
+              >A working copy of the interface, running here. The git is fake — the keys are the
+              real keys.</span
+            >
+            <span class="chip demo__cue--key">click it, then type · shift+tab leaves</span>
+            <span class="chip demo__cue--tap">swipe it · tap the keys below</span>
+          </div>
+
+          <div class="demo__scroll">
+            <div
+              class="term"
+              id="term"
+              tabindex="0"
+              role="application"
+              aria-label="manygit interactive demo. It captures the keyboard, including Tab, which cycles its panes: press Shift+Tab to leave it. Every control is also available as an ordinary button below, and the full key reference is in the Keys section."
+            >
+              <div class="term__veil" aria-hidden="true">
+                <span class="demo__cue--key">click to type into it</span>
+                <span class="demo__cue--tap">tap the keys below</span>
+              </div>
+              <div id="screen"></div>
+            </div>
+          </div>
+
+          <!-- Lives outside #term: the terminal rebuilds its innerHTML on every
+               keystroke, so a live region inside it would never be announced. -->
+          <div id="say" class="sr" aria-live="polite" aria-atomic="true"></div>
+
+          <div class="keypad">
+            <span class="keypad__lbl">panes</span>
+            <button class="key" type="button" data-key="1"><em>1</em> Repos</button>
+            <button class="key" type="button" data-key="2"><em>2</em> Scripts</button>
+            <button class="key" type="button" data-key="3"><em>3</em> Branches</button>
+            <button class="key" type="button" data-key="4"><em>4</em> PRs</button>
+            <button class="key" type="button" data-key="5"><em>5</em> Graph</button>
+            <button class="key" type="button" data-key="6"><em>6</em> Changes</button>
+            <button class="key" type="button" data-key="7"><em>7</em> Output</button>
+          </div>
+          <div class="keypad">
+            <span class="keypad__lbl">try</span>
+            <button class="key" type="button" data-key="j"><em>j</em> down</button>
+            <button class="key" type="button" data-key="k"><em>k</em> up</button>
+            <button class="key" type="button" data-key="Enter"><em>enter</em> select</button>
+            <button class="key" type="button" data-key="t"><em>t</em> tags</button>
+            <button class="key" type="button" data-key="F"><em>F</em> changed only</button>
+            <button class="key" type="button" data-key="s"><em>s</em> sync</button>
+            <button class="key" type="button" data-key="p"><em>p</em> push</button>
+            <button class="key" type="button" data-key="d"><em>d</em> discard</button>
+            <button class="key" type="button" data-key="z"><em>z</em> zoom</button>
+            <button class="key" type="button" data-key="g"><em>g</em> graph</button>
+            <button class="key" type="button" data-key="n"><em>n</em> news</button>
+            <button class="key" type="button" data-key="r"><em>r</em> refetch</button>
+            <button class="key" type="button" data-key="?"><em>?</em> settings</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ----------------------------------------------------- manual -- -->
+      <div class="shell manual">
+        <!-- install -->
+        <section class="sec" id="install">
+          <h2 class="lane">Install</h2>
+          <div class="sec__body">
+            <p class="sec__lede">One command. It drops a single binary in <code>~/.local/bin</code>.</p>
+
+            <div class="cmd">
+              <div class="cmd__txt" tabindex="0" role="group" aria-label="command, scrolls horizontally">
+                <span class="cmd__sigil">$</span
+                >curl -fsSL https://raw.githubusercontent.com/rabeeh-ta/manygit/main/install.sh |
+                bash
+              </div>
+              <button
+                class="cmd__copy"
+                type="button"
+                data-copy="curl -fsSL https://raw.githubusercontent.com/rabeeh-ta/manygit/main/install.sh | bash"
+                  aria-label="copy the install command"
+              >
+                copy
+              </button>
+            </div>
+
+            <p>
+              The installer picks the right build for your OS and architecture, and adds
+              <code>~/.local/bin</code> to your PATH if it isn't there already. On every launch
+              manygit checks for a newer release and offers to update itself, so this is the last
+              time you'll run it.
+            </p>
+
+            <h3>From source</h3>
+            <div class="cmd">
+              <div class="cmd__txt" tabindex="0" role="group" aria-label="command, scrolls horizontally">
+                <span class="cmd__sigil">$</span>git clone https://github.com/rabeeh-ta/manygit &amp;&amp;
+                cd manygit &amp;&amp; go build -o ~/.local/bin/manygit .
+              </div>
+              <button
+                class="cmd__copy"
+                type="button"
+                data-copy="git clone https://github.com/rabeeh-ta/manygit && cd manygit && go build -o ~/.local/bin/manygit ."
+                  aria-label="copy the build-from-source command"
+              >
+                copy
+              </button>
+            </div>
+            <p>Needs Go 1.24 or newer.</p>
+
+            <h3>Then run it</h3>
+            <div class="cmd">
+              <div class="cmd__txt" tabindex="0" role="group" aria-label="command, scrolls horizontally">
+                <span class="cmd__sigil">$</span>manygit
+                <span class="cmd__note"># scan the current directory</span><br />
+                <span class="cmd__sigil">$</span>manygit --root ~/work
+                <span class="cmd__note"># scan somewhere else</span>
+              </div>
+            </div>
+            <p>
+              manygit walks the folder three levels deep, collects every git repo it finds, and
+              groups them by parent directory.
+            </p>
+          </div>
+        </section>
+
+        <!-- keys -->
+        <section class="sec" id="keys">
+          <h2 class="lane">Keys</h2>
+          <div class="sec__body">
+            <p class="sec__lede">
+              Every action applies to the repo under the <code>&gt;</code> cursor.
+            </p>
+            <table class="kt">
+              <thead>
+                <tr>
+                  <th>KEY</th>
+                  <th>ACTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="kt__k"><b>1 2 3</b></td>
+                  <td>Focus Repos, Scripts, or Branches</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>4</b></td>
+                  <td>Pull requests — a tab beside Branches</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>5 6 7</b></td>
+                  <td>The bottom slot: commit graph, changed files, script output</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>j k</b></td>
+                  <td>Move within the focused pane</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>← →</b></td>
+                  <td>Hop between Repos and that repo's Branches</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>enter</b></td>
+                  <td>
+                    Select: open a repo's branches, check one out, run a script, or check out a PR
+                  </td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>s</b> / <b>p</b></td>
+                  <td>Sync (fetch, then fast-forward pull) / push</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>d</b> / <b>D</b></td>
+                  <td>
+                    Discard changes, after a confirm — <b>d</b> tracked files only, <b>D</b> also
+                    deletes untracked ones
+                  </td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>f</b> / <b>r</b></td>
+                  <td>Fetch this repo / refetch all of them</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>/</b></td>
+                  <td>
+                    Filter the focused list. Typing <code>feat</code> finds a remote branch among
+                    hundreds
+                  </td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>F</b></td>
+                  <td>Show only repos that are changed, ahead, or behind</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>t</b></td>
+                  <td>Show each repo's latest tag inline</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>g</b> / <b>n</b></td>
+                  <td>Full-screen commit graph / full-screen news feed</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>o</b> / <b>z</b></td>
+                  <td>Open the repo in your editor / zoom the focused pane</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>?</b> / <b>q</b></td>
+                  <td>Settings and help / quit</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- status -->
+        <section class="sec" id="status">
+          <h2 class="lane">Status</h2>
+          <div class="sec__body">
+            <p class="sec__lede">
+              The right-hand column of the Repos pane, in one glance per repo.
+            </p>
+            <table class="kt">
+              <tbody>
+                <tr>
+                  <td class="kt__g gr">ok</td>
+                  <td>Up to date with upstream</td>
+                </tr>
+                <tr>
+                  <td class="kt__g yl">↑N</td>
+                  <td>N commits ahead — something to push</td>
+                </tr>
+                <tr>
+                  <td class="kt__g cy">↓N</td>
+                  <td>N commits behind — something to pull</td>
+                </tr>
+                <tr>
+                  <td class="kt__g mg">↑N ↓M</td>
+                  <td>Diverged from upstream</td>
+                </tr>
+                <tr>
+                  <td class="kt__g og">*N</td>
+                  <td>N files changed in the working tree</td>
+                </tr>
+                <tr>
+                  <td class="kt__g d">no-remote</td>
+                  <td>A local-only repo, never pushed anywhere. <b>s</b> and <b>p</b> skip it</td>
+                </tr>
+                <tr>
+                  <td class="kt__g rd">!</td>
+                  <td>The branch has no upstream, or git errored</td>
+                </tr>
+              </tbody>
+            </table>
+            <p>
+              If the arrows misalign in your terminal, switch to ASCII <code>+</code>/<code>-</code>
+              in the settings screen — press <b>?</b>, in the demo above too.
+            </p>
+          </div>
+        </section>
+
+        <!-- github -->
+        <section class="sec" id="github">
+          <h2 class="lane">Pull requests</h2>
+          <div class="sec__body">
+            <p class="sec__lede">
+              If the <code>gh</code> CLI is signed in, a PRs tab appears next to Branches.
+            </p>
+            <p>
+              Press <b>4</b>. One list is the pull requests you opened; <b>m</b> toggles to the ones
+              waiting on your review. A count of both sits at the right end of the top bar, so you
+              see it without opening the tab.
+            </p>
+            <p>
+              Press <b>enter</b> on a PR and manygit checks out its branch in the matching local
+              clone — it maps the PR to a repo by its origin remote, runs
+              <code>gh pr checkout</code> (which handles forks and tracking), and lands you on that
+              repo's Branches, ready to read the diff. It only does this when the repo is in view and
+              its working tree is clean. Otherwise it tells you which of the two is in the way.
+            </p>
+            <p>
+              Needs <code>gh</code> 2.12 or newer. Without it, the tab shows a hint and the rest of
+              manygit carries on as normal.
+            </p>
+          </div>
+        </section>
+
+        <!-- news -->
+        <section class="sec" id="news">
+          <h2 class="lane">News</h2>
+          <div class="sec__body">
+            <p class="sec__lede">
+              The top bar reads the last few days of commits back to you in English.
+            </p>
+            <p>
+              If you have <code>claude</code> or <code>codex</code> on your PATH, manygit hands them
+              the recent main-branch commits across every repo and rotates the summaries through the
+              top bar. Press <b>n</b> for all of them at once. Summaries are cached for four hours
+              and rewritten in place, so opening manygit doesn't re-summarize and the cache never
+              grows.
+            </p>
+            <p>No AI tool installed? The top bar shows a repo count instead. Nothing else changes.</p>
+          </div>
+        </section>
+
+        <!-- config -->
+        <section class="sec" id="config">
+          <h2 class="lane">Config</h2>
+          <div class="sec__body">
+            <p class="sec__lede">
+              Optional. The settings screen (<b>?</b>) writes this file for you.
+            </p>
+            <div class="cmd">
+              <div class="cmd__txt" tabindex="0" role="group" aria-label="command, scrolls horizontally">
+                <span class="cmd__sigil">~</span>/.config/manygit/config.yml
+              </div>
+            </div>
+            <table class="kt">
+              <tbody>
+                <tr>
+                  <td class="kt__k"><b>max_depth</b></td>
+                  <td>How deep to walk looking for repos. Default <code>3</code></td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>open_cmd</b></td>
+                  <td>
+                    What <b>o</b> runs in the repo — <code>code</code>, <code>cursor</code>,
+                    <code>code -r</code>. A trailing <code>.</code> is fine
+                  </td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>theme</b></td>
+                  <td>
+                    <code>default</code>, <code>serika_dark</code>, <code>dracula</code>,
+                    <code>nord</code>, <code>catppuccin</code>, <code>8008</code>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>status_glyphs</b></td>
+                  <td><code>unicode</code> arrows, or <code>ascii</code> if they misalign</td>
+                </tr>
+              </tbody>
+            </table>
+            <p>
+              manygit never writes to the folder you launch it from, and never force-pushes, merges,
+              or rebases. The one destructive action is discarding a repo's changes with
+              <b>d</b> / <b>D</b>, and it always asks first.
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="shell foot">
+      <span>manygit</span>
+      <a href="https://github.com/rabeeh-ta/manygit">source</a>
+      <a href="https://github.com/rabeeh-ta/manygit/releases">releases</a>
+      <a href="https://github.com/rabeeh-ta/manygit/issues">issues</a>
+      <span class="foot__sp"
+        >Shaped after <a href="https://github.com/jesseduffield/lazygit">lazygit</a>, one directory
+        up. Themes adapted from <a href="https://monkeytype.com">monkeytype</a>. Built with
+        <a href="https://github.com/charmbracelet/bubbletea">Bubble Tea</a> and
+        <a href="https://github.com/charmbracelet/lipgloss">Lip Gloss</a>.</span
+      >
+    </footer>
+
+    <script src="assets/demo.js"></script>
+  </body>
+</html>
