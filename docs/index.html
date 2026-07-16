@@ -3,22 +3,67 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>manygit — every repo underneath, on one screen</title>
+    <title>manygit — a lazygit-style TUI for many git repos, on one screen</title>
     <meta
       name="description"
-      content="A lazygit-style terminal UI for a folder full of git repos. See which are ahead, behind, or dirty across all of them at once — then fetch, pull, push, and switch branches without cd-ing anywhere."
+      content="manygit is a lazygit-style terminal UI for a folder full of git repositories. See which repos are ahead, behind, or dirty across all of them at once, then fetch, pull, push and switch branches without cd-ing between them. A free single binary for macOS and Linux — try the real interface in your browser."
     />
+    <meta
+      name="keywords"
+      content="lazygit alternative, lazygit for multiple repos, git tui, terminal ui for git, manage multiple git repositories, multi-repo tool, git status all repos, check all git repos at once, monorepo of repos, git workspace manager, bulk git pull, terminal git client, go cli, bubbletea"
+    />
+    <meta name="author" content="Rabeeh T A" />
     <link rel="canonical" href="https://rabeeh-ta.github.io/manygit/" />
 
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="manygit — every repo underneath, on one screen" />
+    <meta property="og:site_name" content="manygit" />
+    <meta property="og:title" content="manygit — a lazygit-style TUI for many git repos" />
     <meta
       property="og:description"
-      content="A lazygit-style terminal UI for a folder full of git repos. Try the real interface in your browser."
+      content="Point it at a folder and see every git repo underneath on one screen — ahead, behind, or dirty. Try the real interface in your browser."
     />
     <meta property="og:url" content="https://rabeeh-ta.github.io/manygit/" />
+    <meta property="og:image" content="https://rabeeh-ta.github.io/manygit/assets/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="manygit: a terminal showing several git repos with their branches and ahead/behind/dirty status."
+    />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="manygit — a lazygit-style TUI for many git repos" />
+    <meta
+      name="twitter:description"
+      content="Point it at a folder and see every git repo underneath on one screen — ahead, behind, or dirty."
+    />
+    <meta name="twitter:image" content="https://rabeeh-ta.github.io/manygit/assets/og.png" />
     <meta name="theme-color" content="#0b0b0c" />
+
+    <!-- Structured data. Unlike <meta keywords>, engines actually read this. No
+         license is declared because the repo does not carry one yet. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "manygit",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "Version Control",
+        "operatingSystem": "macOS, Linux",
+        "url": "https://rabeeh-ta.github.io/manygit/",
+        "downloadUrl": "https://github.com/rabeeh-ta/manygit/releases",
+        "codeRepository": "https://github.com/rabeeh-ta/manygit",
+        "programmingLanguage": "Go",
+        "softwareVersion": "1.0.6",
+        "screenshot": "https://rabeeh-ta.github.io/manygit/assets/og.png",
+        "description": "A lazygit-style terminal UI for a folder full of git repositories. Shows every repo underneath on one screen — ahead, behind, or dirty — and fetches, pulls, pushes and switches branches on the one under the cursor.",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": {
+          "@type": "Person",
+          "name": "Rabeeh T A",
+          "url": "https://github.com/rabeeh-ta"
+        }
+      }
+    </script>
 
     <link
       rel="icon"

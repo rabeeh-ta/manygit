@@ -1,0 +1,102 @@
+# manygit
+
+> A lazygit-style terminal UI for a whole tree of git repos. Point it at a
+> directory and it shows every git repository nested under it on one screen — which
+> are ahead, behind, or dirty — then fetches, pulls, pushes, and switches
+> branches on the one under the cursor, without cd-ing between them.
+
+manygit is a single Go binary for macOS and Linux, built with Bubble Tea and
+Lip Gloss. It is free and open source at https://github.com/rabeeh-ta/manygit
+
+## What problem it solves
+
+If you keep more than a handful of git repos in one tree — microservices, a
+workspace of packages, a folder of plugins, nested at whatever depth — answering
+"which of these have uncommitted work, and which are behind origin?" means
+`cd`-ing through every one, or maintaining a shell loop like:
+
+    for d in */; do (cd "$d" && git status); done
+
+manygit replaces that loop with a screen you can act from. It is to a folder of
+repos what lazygit is to a single repo.
+
+## Install
+
+    curl -fsSL https://raw.githubusercontent.com/rabeeh-ta/manygit/main/install.sh | bash
+
+From source (needs Go 1.24+):
+
+    git clone https://github.com/rabeeh-ta/manygit && cd manygit
+    go build -o ~/.local/bin/manygit .
+
+## Usage
+
+    manygit                 # scan the current directory
+    manygit --root ~/work   # scan a specific folder
+
+It walks the folder three levels deep by default, skips `node_modules`, `vendor`,
+`dist`, `target` and similar, and groups the repos it finds by parent directory.
+
+## Panes
+
+- `1` Repos — every repo, its current branch, and its status
+- `2` Scripts — `*.sh` files near the root, runnable in place
+- `3` Branches — the highlighted repo's local and remote branches
+- `4` PRs — GitHub pull requests (needs the `gh` CLI, 2.12+)
+- `5` Graph — a colored commit graph for the highlighted repo
+- `6` Changes — changed files of the selected commit, with in-place diffs
+- `7` Output — live output of the last script run
+
+## Keys
+
+Actions apply to the repo under the `>` cursor.
+
+- `j` / `k` — move within the focused pane
+- `←` / `→` — hop between Repos and that repo's Branches
+- `enter` — open a repo's branches, check one out, run a script, or check out a PR
+- `s` / `p` — sync (fetch then fast-forward pull) / push
+- `d` / `D` — discard changes after a confirm (`D` also deletes untracked files)
+- `f` / `r` — fetch this repo / refetch all
+- `/` — filter the focused list; Repos match on name AND current branch (and the
+  tag while `t` is on)
+- `F` — show only repos that are changed, ahead, or behind
+- `t` — show each repo's latest tag inline
+- `g` / `n` — full-screen commit graph / full-screen news feed
+- `m` — in the PRs pane, toggle your PRs and review requests
+- `o` / `z` — open the repo in your editor / zoom the focused pane
+- `?` — settings and help
+- `q` — quit
+
+## Status column
+
+- `ok` — up to date with upstream
+- `↑N` — N commits ahead, something to push
+- `↓N` — N commits behind, something to pull
+- `↑N ↓M` — diverged
+- `*N` — N files changed in the working tree
+- `no-remote` — a local-only repo, never pushed anywhere
+- `!` — the branch has no upstream, or git errored
+
+## Other features
+
+- GitHub PRs: with the `gh` CLI signed in, `4` lists your open PRs and the ones
+  awaiting your review. `enter` checks the PR's branch out in the matching local
+  clone via `gh pr checkout`.
+- AI news feed: with `claude` or `codex` on PATH, the top bar summarizes recent
+  commits across every repo in English. Cached four hours.
+- Themes: `default`, `serika_dark`, `dracula`, `nord`, `catppuccin`, `8008`,
+  adapted from monkeytype. Configurable in `~/.config/manygit/config.yml` or the
+  `?` screen.
+
+## Safety
+
+manygit never writes to the folder you launch it from, and never force-pushes,
+merges, or rebases. The only destructive action is discarding a repo's changes
+(`d` / `D`), which always asks first.
+
+## Links
+
+- Site and interactive demo: https://rabeeh-ta.github.io/manygit/
+- Source: https://github.com/rabeeh-ta/manygit
+- Releases: https://github.com/rabeeh-ta/manygit/releases
+- Issues: https://github.com/rabeeh-ta/manygit/issues

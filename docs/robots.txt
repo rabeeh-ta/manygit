@@ -1,0 +1,8 @@
+# NOTE: crawlers only read robots.txt at a domain ROOT
+# (https://rabeeh-ta.github.io/robots.txt). This file sits under /manygit/, so it
+# is inert today — it takes effect if manygit ever gets a custom domain, where
+# docs/ becomes the root. Nothing here needs blocking either way.
+User-agent: *
+Allow: /
+
+Sitemap: https://rabeeh-ta.github.io/manygit/sitemap.xml

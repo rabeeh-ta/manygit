@@ -1,9 +1,16 @@
 # manygit
 
-A lazygit-style terminal UI for managing **many git repos at once**. See every
-repo's branch and whether it's ahead / behind / dirty, and fetch, pull, push, or
-switch branches on the highlighted one — plus a commit graph, a script runner,
-and a GitHub pull-request pane (when the `gh` CLI is installed).
+A lazygit-style terminal UI for a whole **tree** of git repos. Point it at a
+folder and every repo underneath is on one screen: its branch, and whether it's
+ahead / behind / dirty. Fetch, pull, push, or switch branches on the one under
+the cursor — plus a commit graph, a script runner, and a GitHub pull-request pane
+(when the `gh` CLI is installed).
+
+![manygit filtering a tree of repos by branch, browsing pull requests, and switching themes](docs/assets/demo.gif)
+
+<sub>Or **[try the real interface in your browser](https://rabeeh-ta.github.io/manygit/)** — the
+landing page runs a working port of the TUI. The git is fake; the keys are the
+real keys.</sub>
 
 ## Install
 
