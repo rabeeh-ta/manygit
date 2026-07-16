@@ -434,13 +434,16 @@ a.chip:hover {
    narrow screens swipe rather than reflow (a TUI doesn't reflow either). */
 .term {
   min-width: 720px;
-  height: 448px;
+  /* 2.0:1 rather than the 2.5:1 this started at — the real tool runs nearer
+     1.6:1, and at 448px the Repos pane couldn't show all 12 repos at once,
+     which is the whole point of the thing. */
+  height: 560px;
   display: flex;
   flex-direction: column;
   background: var(--bg);
   border: 1px solid var(--rule);
   border-radius: 8px;
-  padding: 14px 16px 12px;
+  padding: 14px 16px 14px;
   font-size: 12px;
   line-height: 1.5;
   position: relative;
@@ -461,9 +464,11 @@ a.chip:hover {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
-/* Click-to-focus veil, untinted. This is the page's hero and has to read as alive
-   at first glance; a scrim would also drop the terminal's own dim text below 3:1.
-   The cue chip carries the "not listening yet" message on its own. */
+/* Click-to-focus veil. The blur is the affordance: it reads as "this is behind
+   glass, wake it up" and pushes the eye to the cue chip. Deliberately soft —
+   enough to defocus, not so much that you can't tell it's a terminal. It clears
+   the moment the pane takes focus, so the text is never blurred while readable
+   content is expected of it (keyboard users reach it by Tab, same as a click). */
 .term__veil {
   position: absolute;
   inset: 0;
@@ -471,7 +476,9 @@ a.chip:hover {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  background: transparent;
+  background: color-mix(in srgb, var(--bg) 12%, transparent);
+  backdrop-filter: blur(1.3px);
+  -webkit-backdrop-filter: blur(1.3px);
   transition: opacity var(--t);
 }
 .term:focus .term__veil {
@@ -539,18 +546,23 @@ a.chip:hover {
 }
 /* Repos over Scripts; Branches/PRs over Graph/Changes/Output.
    Ratios mirror view.go: top slot = 40% of the right column. */
+/* Scripts is sized to its content, not given a fixed slot: view.go sets
+   scriptsInner = len(m.scripts) (clamped to [3, bodyH/3]), so 4 scripts = 4 rows.
+   4*18 line-height + 14 padding + 2 border = 88. Everything left goes to Repos. */
 .term__col--l {
-  grid-template-rows: 1fr 132px;
+  grid-template-rows: 1fr 88px;
 }
 .term__col--r {
   grid-template-rows: 40fr 60fr;
 }
 
+/* 18px, matching .term__body's own top margin: the footer line was sitting hard
+   against the Scripts/Output bottom borders. Same breathing room top and bottom. */
 .term__bot {
   display: flex;
   gap: 12px;
   align-items: baseline;
-  margin-top: 10px;
+  margin-top: 18px;
   flex: none;
   white-space: nowrap;
 }
@@ -584,11 +596,16 @@ a.chip:hover {
 }
 
 /* the title spliced into the top border, like lipgloss's ╭─[1] Repos───╮ */
+/* `right: auto` so the label is only as wide as its text: it must knock a hole in
+   the top border exactly the width of the title and no further, the way lipgloss
+   splices it — ╭─[1] Repos──────╮. A full-width box here would paint --bg over
+   the whole border and leave the pane looking open on top. */
 .pane__title {
   position: absolute;
   top: -0.72em;
   left: 9px;
-  right: 9px;
+  right: auto;
+  max-width: calc(100% - 20px);
   padding: 0 5px;
   background: var(--bg);
   font-size: 11px;
@@ -959,7 +976,7 @@ a.chip:hover {
   /* the terminal's height must come off .term — .term__body is `flex: 1` inside
      it, so a height here would be overridden by the flex basis and do nothing */
   .term {
-    height: 400px;
+    height: 500px;
   }
 }
 
