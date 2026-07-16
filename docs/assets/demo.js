@@ -175,7 +175,7 @@
     { num: 91, author: "zameel7", title: "Bump the cluster to Kubernetes 1.30", repo: "k8s-manifests", draft: false },
     { num: 128, author: "nihxdr", title: "Split the OTLP exporter out of core", repo: "telemetry", draft: false },
     { num: 143, author: "rafeehcp", title: "Drop the vendored logger", repo: "api-gateway", draft: true },
-    { num: 12, author: "knadh", title: "Cache the route table between reloads", repo: "docs-site", draft: false }
+    { num: 12, author: "Sinu00", title: "Cache the route table between reloads", repo: "docs-site", draft: false }
   ];
 
   var NEWS = [
