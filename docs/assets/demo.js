@@ -369,11 +369,30 @@
 
   function needsAttention(r) { return r.dirty > 0 || r.ahead > 0 || r.behind > 0; }
 
+  // currentBranch is the branch label a row shows: "detached" when the head is,
+  // otherwise the branch name. `/` matches this string, so it has to be the same
+  // one renderRow draws.
+  function currentBranch(r) { return r.detached ? "detached" : r.b; }
+
+  // repoHaystack is the text `/` matches a repo row against: what the row shows —
+  // its name and current branch, plus the latest tag while `t` has tags inline.
+  // It matches the full values rather than the width-truncated ones renderRow
+  // draws, so results never depend on how wide the terminal happens to be.
+  //
+  // The group header and the dirty/sync cells are deliberately left out: `F`
+  // already filters on attention state, and folding it into `/` would give "ok"
+  // two meanings.
+  function repoHaystack(r) {
+    var s = r.n + " " + currentBranch(r);
+    if (S.showTags) s += " " + (r.tag || "");
+    return s.toLowerCase();
+  }
+
   function visibleRepos() {
     var needle = S.filterPanel === "repos" ? S.filter.toLowerCase() : "";
     if (!needle && !S.filterAttention) return REPOS;
     return REPOS.filter(function (r) {
-      if (needle && r.n.toLowerCase().indexOf(needle) < 0) return false;
+      if (needle && repoHaystack(r).indexOf(needle) < 0) return false;
       if (S.filterAttention && !needsAttention(r)) return false;
       return true;
     });
@@ -469,7 +488,8 @@
   function renderRow(i, r) {
     var on = i === S.cursor && S.focus === "repos";
     var mark = i === S.cursor;
-    var name = esc(r.n) + d(" (" + r.b + ")") + (S.showTags && r.tag ? d(" (" + r.tag + ")") : "");
+    var name = esc(r.n) + d(" (" + currentBranch(r) + ")") +
+      (S.showTags && r.tag ? d(" (" + r.tag + ")") : "");
     return (
       '<div class="row" data-on="' + (on ? 1 : 0) + '" data-mark="' + (mark ? 1 : 0) + '">' +
       '<span class="row__cur">' + (mark ? "> " : "  ") + "</span>" +
@@ -938,6 +958,26 @@
     if (S.filterPanel === "branches") { S.filter = ""; S.filterPanel = "repos"; S.branchCursor = 0; }
   }
 
+  // keepCursorOn re-points the cursor at the repo at path within the current
+  // visible set, or clamps to the top when it's no longer there. Unlike
+  // focusRepoByPath it preserves the active filter — it exists for changes that
+  // reshuffle the filtered list rather than escape it.
+  //
+  // It reloads the context panes only when the cursor actually ends up on a
+  // different repo. Reloading regardless would be worse than wasteful: it resets
+  // graphSel/graphOffset and changeShowDiff, so a reshuffle that moved nothing
+  // would still collapse an open diff and scroll the graph back to the top.
+  function keepCursorOn(path) {
+    S.cursor = 0;
+    var vis = visibleRepos();
+    for (var i = 0; i < vis.length; i++) {
+      if (vis[i].path === path) { S.cursor = i; break; }
+    }
+    var r = curRepo();
+    if (r && r.path === path) return; // same repo still under the cursor — nothing to reload
+    loadContext();
+  }
+
   function topScroll(n) {
     if (S.topView === "prs") S.prCursor = clamp(S.prCursor + n, 0, Math.max(0, visiblePRs().length - 1));
     else S.branchCursor = clamp(S.branchCursor + n, 0, Math.max(0, visibleBranches().length - 1));
@@ -1111,7 +1151,16 @@
       case "z": S.zoomed = !S.zoomed; break;
       case "g": S.showGraph = true; S.graphOffset = 0; break;
       case "n": S.showNews = true; S.newsOffset = 0; break;
-      case "t": S.showTags = !S.showTags; break;
+      case "t": {
+        // The tag is part of what `/` matches, so with a repo filter active this
+        // resizes the visible list under the cursor — pin it to its repo first.
+        var tPath = "";
+        var tr = curRepo();
+        if (tr) tPath = tr.path;
+        S.showTags = !S.showTags;
+        if (S.filter && S.filterPanel === "repos") keepCursorOn(tPath);
+        break;
+      }
       case "1": S.focus = "repos"; break;
       case "2": S.focus = "scripts"; break;
       case "3": S.focus = "branches"; clearPRFilter(); S.topView = "branches"; break;
