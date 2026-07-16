@@ -25,7 +25,7 @@ func TestParseHeadlines(t *testing.T) {
 // to the repo count; ticks rotate; a stale generation is dropped.
 func TestTUI_NewsFeed(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 20)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 20)
 
 	if v := stripANSI(m.View()); !strings.Contains(v, "2 repos") {
 		t.Error("with no news the top bar should show the repo count")
@@ -64,7 +64,7 @@ func TestTUI_NewsFeed(t *testing.T) {
 func TestTUI_NewsWindowSetting(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	cfg.Harness = "definitely-not-installed" // maybeRefreshNews returns nil (no CLI call)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	m.showHelp = true
 	idx := settingRowIndex(skNewsDays, "7")
 	if idx < 0 {
@@ -81,7 +81,7 @@ func TestTUI_NewsWindowSetting(t *testing.T) {
 
 func TestMaybeRefreshNews_NoHarness(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := New(cfg, repos, nil)
+	m := New(cfg, "", repos, nil)
 	m.cfg.Harness = "definitely-not-installed"
 	if c := m.maybeRefreshNews(); c != nil {
 		t.Error("no harness should not start a news refresh")
@@ -97,11 +97,11 @@ func TestNewsCache_LoadFreshIntoModel(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	cfg, repos := twoRepos(t)
 	cfg.NewsDays = 3
-	sig := repoSig(New(cfg, repos, nil).repos) // deterministic for this repo set
+	sig := repoSig(New(cfg, "", repos, nil).repos) // deterministic for this repo set
 
 	saveNewsCache(cachedNews{CachedAt: time.Now(), Days: 3, Sig: sig, Headlines: []string{"shipped X", "fixed Y"}})
 
-	m := New(cfg, repos, nil)
+	m := New(cfg, "", repos, nil)
 	if len(m.newsFeed) != 2 || m.newsFeed[0] != "shipped X" {
 		t.Fatalf("a fresh matching cache should load, got %v", m.newsFeed)
 	}
@@ -119,7 +119,7 @@ func TestNewsCache_IgnoredWhenStaleOrMismatched(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	cfg, repos := twoRepos(t)
 	cfg.NewsDays = 3
-	sig := repoSig(New(cfg, repos, nil).repos)
+	sig := repoSig(New(cfg, "", repos, nil).repos)
 	heads := []string{"x"}
 
 	for name, c := range map[string]cachedNews{
@@ -128,7 +128,7 @@ func TestNewsCache_IgnoredWhenStaleOrMismatched(t *testing.T) {
 		"wrong-repos": {CachedAt: time.Now(), Days: 3, Sig: "deadbeef", Headlines: heads},
 	} {
 		saveNewsCache(c)
-		if m := New(cfg, repos, nil); len(m.newsFeed) != 0 {
+		if m := New(cfg, "", repos, nil); len(m.newsFeed) != 0 {
 			t.Errorf("%s cache should be ignored, got %v", name, m.newsFeed)
 		}
 	}

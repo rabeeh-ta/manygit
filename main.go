@@ -61,7 +61,7 @@ func main() {
 	// *.sh scripts near the root (root-level + one dir deep, e.g. scripts/).
 	scripts := discover.Scripts(scanRoot, 2, cfg.PruneSet())
 
-	p := tea.NewProgram(tui.New(cfg, repos, scripts), tea.WithAltScreen(), tea.WithReportFocus())
+	p := tea.NewProgram(tui.New(cfg, scanRoot, repos, scripts), tea.WithAltScreen(), tea.WithReportFocus())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

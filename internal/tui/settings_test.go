@@ -2,12 +2,15 @@ package tui
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"manygit/internal/config"
+	"manygit/internal/discover"
 	"manygit/internal/harness"
 )
 
@@ -34,7 +37,7 @@ func TestTUI_HelpFitsTerminal(t *testing.T) {
 	t.Cleanup(func() { applyTheme(themeByName("default")) })
 	for _, d := range []struct{ w, h int }{{80, 20}, {100, 30}, {120, 40}} {
 		cfg, repos := twoRepos(t)
-		m := loadAll(t, New(cfg, repos, nil), d.w, d.h)
+		m := loadAll(t, New(cfg, "", repos, nil), d.w, d.h)
 		mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 		m = mm.(Model)
 		for _, view := range []string{"settings", "keys"} {
@@ -82,7 +85,7 @@ func TestTUI_SettingsScreen(t *testing.T) {
 	t.Cleanup(func() { applyTheme(themeByName("default")) })
 	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 
 	mm, _ := m.Update(rk("?"))
 	m = mm.(Model)
@@ -160,7 +163,7 @@ func TestTUI_HarnessSettingAndBar(t *testing.T) {
 	t.Cleanup(func() { applyTheme(themeByName("default")) })
 	cfg, repos := twoRepos(t)
 	cfg.Harness = "claude"
-	m := loadAll(t, New(cfg, repos, nil), 120, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 30)
 
 	if v := stripANSI(m.View()); !strings.Contains(v, "harness: claude") {
 		t.Errorf("bottom bar should show the active harness; view:\n%s", v)
@@ -193,7 +196,7 @@ func TestTUI_HarnessSettingAndBar(t *testing.T) {
 func TestTUI_SettingsPreviewRevert(t *testing.T) {
 	t.Cleanup(func() { applyTheme(themeByName("default")) })
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	m = mm.(Model)
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // preview serika_dark
@@ -212,7 +215,7 @@ func TestTUI_SettingsPreviewRevert(t *testing.T) {
 func TestTUI_SettingsEditCancel(t *testing.T) {
 	t.Cleanup(func() { applyTheme(themeByName("default")) })
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	m.showHelp = true
 	m.settingsCursor = settingRowIndex(skEditor, "")
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -227,5 +230,176 @@ func TestTUI_SettingsEditCancel(t *testing.T) {
 	// screen still open (esc only cancelled the edit)
 	if !m.showHelp {
 		t.Error("esc during edit should not also close the screen")
+	}
+}
+
+// pickDepth drives the ? screen to the scan-depth row for val and hits enter,
+// returning the model and whatever rescanMsg the command produced.
+func pickDepth(t *testing.T, m Model, val string) (Model, tea.Msg) {
+	t.Helper()
+	m.showHelp = true
+	m.settingsCursor = settingRowIndex(skMaxDepth, val)
+	if m.settingsCursor < 0 {
+		t.Fatalf("no scan-depth row for %q", val)
+	}
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		return mm.(Model), nil
+	}
+	return mm.(Model), cmd()
+}
+
+// The scan-depth setting must never be able to empty the Repos pane. main.go
+// exits rather than start with zero repos, so the ? screen must not be able to
+// reach a state the binary itself refuses to boot into. twoReposIn's repos live
+// at <root>/grp/<name>, so depth 1 finds nothing — the change has to be dropped,
+// keeping BOTH the old depth and the old list.
+func TestTUI_ScanDepthRejectsEmptyResult(t *testing.T) {
+	cfg, root, repos := twoReposIn(t)
+	m := New(cfg, root, repos, nil)
+	m.width, m.height = 100, 30
+
+	m, msg := pickDepth(t, m, "1")
+	rs, ok := msg.(rescanMsg)
+	if !ok {
+		t.Fatalf("expected a rescanMsg, got %T", msg)
+	}
+	if rs.depth != 1 {
+		t.Fatalf("rescan carried depth %d, want 1", rs.depth)
+	}
+	if len(rs.repos) != 0 {
+		t.Fatalf("fixture broken: depth 1 found %d repos, want 0", len(rs.repos))
+	}
+
+	mm, _ := m.Update(rs)
+	got := mm.(Model)
+	if got.cfg.MaxDepth != 3 {
+		t.Errorf("depth committed to %d despite an empty walk; want it left at 3", got.cfg.MaxDepth)
+	}
+	if len(got.repos) != 2 {
+		t.Errorf("repo list became %d; the old list must survive a fruitless rescan", len(got.repos))
+	}
+}
+
+// nestedRepos builds a root with repos at three different depths:
+//
+//	<root>/top             depth 1
+//	<root>/grp/mid         depth 2
+//	<root>/grp/sub/deep    depth 3
+//
+// twoReposIn puts everything at depth 2, so a depth change there leaves the
+// count identical and a test can't tell a real swap from a no-op. Here each
+// depth yields a different count.
+func nestedRepos(t *testing.T) (config.Config, string) {
+	t.Helper()
+	root := t.TempDir()
+	for _, rel := range []string{"top", "grp/mid", "grp/sub/deep"} {
+		dir := filepath.Join(root, rel)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		gitCmd(t, dir, "init", "-q", "-b", "master")
+		if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitCmd(t, dir, "add", ".")
+		gitCmd(t, dir, "commit", "-q", "-m", "init")
+	}
+	return config.Default(), root
+}
+
+// A depth that finds repos commits and swaps the list in. The fixture's count
+// changes with depth (1/2/3 repos), so this fails if applyRescan silently keeps
+// the old list.
+func TestTUI_ScanDepthAppliesWhenReposFound(t *testing.T) {
+	cfg, root := nestedRepos(t)
+	repos, err := discover.Discover(root, discover.Options{MaxDepth: 3, Prune: cfg.PruneSet()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 3 {
+		t.Fatalf("fixture broken: depth 3 found %d repos, want 3", len(repos))
+	}
+	m := New(cfg, root, repos, nil)
+	m.width, m.height = 100, 30
+
+	m, msg := pickDepth(t, m, "2")
+	rs, ok := msg.(rescanMsg)
+	if !ok {
+		t.Fatalf("expected a rescanMsg, got %T", msg)
+	}
+	if len(rs.repos) != 2 {
+		t.Fatalf("depth 2 found %d repos, want 2 (top + grp/mid)", len(rs.repos))
+	}
+
+	mm, _ := m.Update(rs)
+	got := mm.(Model)
+	if got.cfg.MaxDepth != 2 {
+		t.Errorf("MaxDepth = %d, want 2 — a fruitful rescan must commit", got.cfg.MaxDepth)
+	}
+	if len(got.repos) != 2 {
+		t.Errorf("repos = %d, want 2 — the model must take the rescanned list", len(got.repos))
+	}
+	for _, r := range got.repos {
+		if r.repo.Name == "deep" {
+			t.Error("depth-3 repo survived a depth-2 rescan")
+		}
+	}
+}
+
+// Widening the depth brings repos back and stats only the new ones.
+func TestTUI_ScanDepthWidens(t *testing.T) {
+	cfg, root := nestedRepos(t)
+	cfg.MaxDepth = 1
+	repos, err := discover.Discover(root, discover.Options{MaxDepth: 1, Prune: cfg.PruneSet()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 1 {
+		t.Fatalf("fixture broken: depth 1 found %d repos, want 1", len(repos))
+	}
+	m := New(cfg, root, repos, nil)
+	m.width, m.height = 100, 30
+
+	m, msg := pickDepth(t, m, "3")
+	rs := msg.(rescanMsg)
+	mm, _ := m.Update(rs)
+	got := mm.(Model)
+	if len(got.repos) != 3 {
+		t.Errorf("repos = %d, want 3 after widening 1 -> 3", len(got.repos))
+	}
+	if got.cfg.MaxDepth != 3 {
+		t.Errorf("MaxDepth = %d, want 3", got.cfg.MaxDepth)
+	}
+}
+
+// Re-picking the depth already in effect must not kick off a walk at all.
+func TestTUI_ScanDepthNoopOnSameValue(t *testing.T) {
+	cfg, root, repos := twoReposIn(t)
+	m := New(cfg, root, repos, nil) // cfg.MaxDepth is 3 by default
+	m.width, m.height = 100, 30
+
+	if _, msg := pickDepth(t, m, "3"); msg != nil {
+		t.Errorf("selecting the active depth produced %T; want no command", msg)
+	}
+}
+
+// applyRescan must keep the *repoVM of repos that were already on screen — their
+// status did not change just because the walk got wider, and rebuilding them
+// would blank the list and re-fetch every remote.
+func TestTUI_ScanDepthKeepsLoadedRepos(t *testing.T) {
+	cfg, root, repos := twoReposIn(t)
+	m := loadAll(t, New(cfg, root, repos, nil), 100, 30)
+	before := m.repos[0]
+	if !before.loaded {
+		t.Fatal("fixture broken: repo should be loaded after loadAll")
+	}
+
+	m.applyRescan([]discover.Repo{m.repos[0].repo, m.repos[1].repo})
+	if m.repos[0] != before {
+		t.Error("a surviving repo was rebuilt; its loaded status should carry over")
+	}
+	if !m.repos[0].loaded {
+		t.Error("a surviving repo lost its loaded status across a rescan")
 	}
 }

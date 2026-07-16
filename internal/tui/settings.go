@@ -14,6 +14,7 @@ const (
 	skTheme settingKind = iota
 	skHarness
 	skNewsDays
+	skMaxDepth
 	skGlyph
 	skEditor
 )
@@ -21,15 +22,20 @@ const (
 // newsDayOptions are the selectable top-bar news-feed windows, in days.
 var newsDayOptions = []int{1, 3, 7, 14}
 
+// maxDepthOptions are the selectable scan depths — how many folders below the
+// root to walk looking for repos. config.Default() ships 3.
+var maxDepthOptions = []int{1, 2, 3, 4, 5}
+
 type settingRow struct {
 	kind settingKind
 	val  string // theme/harness/glyph value; "" for the editor row
 }
 
 // settingRows is the ordered list of selectable rows: every theme, every known
-// harness, the news-window options, the two glyph modes, then the editor.
+// harness, the news-window options, the scan depths, the two glyph modes, then
+// the editor.
 func settingRows() []settingRow {
-	rows := make([]settingRow, 0, len(themeList)+len(harness.All)+len(newsDayOptions)+3)
+	rows := make([]settingRow, 0, len(themeList)+len(harness.All)+len(newsDayOptions)+len(maxDepthOptions)+3)
 	for _, t := range themeList {
 		rows = append(rows, settingRow{skTheme, t.Name})
 	}
@@ -38,6 +44,9 @@ func settingRows() []settingRow {
 	}
 	for _, d := range newsDayOptions {
 		rows = append(rows, settingRow{skNewsDays, strconv.Itoa(d)})
+	}
+	for _, d := range maxDepthOptions {
+		rows = append(rows, settingRow{skMaxDepth, strconv.Itoa(d)})
 	}
 	rows = append(rows, settingRow{skGlyph, "unicode"}, settingRow{skGlyph, "ascii"})
 	rows = append(rows, settingRow{skEditor, ""})

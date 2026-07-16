@@ -79,7 +79,7 @@ func TestScriptStreamingRealProcess(t *testing.T) {
 func TestTUI_EnterRunsScriptIntoOutput(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	scripts := []discover.Script{{Path: "/x/a.sh", Name: "a.sh"}}
-	m := loadAll(t, New(cfg, repos, scripts), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, scripts), 100, 30)
 	m.focus = panelScripts
 
 	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"manygit/internal/config"
+	"manygit/internal/discover"
 	"manygit/internal/harness"
 )
 
@@ -172,6 +174,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		exp := m.setStatus(styleGreen.Render("checked out PR #" + num + " in " + name))
 		m.focusRepoByPath(msg.path) // land on that repo's branches, ready to review
 		return m, tea.Batch(exp, statusCmd(msg.path), m.loadContextCmd())
+	case rescanMsg:
+		switch {
+		case msg.err != nil:
+			return m, m.setStatus(styleRed.Render("rescan failed: " + msg.err.Error()))
+		case len(msg.repos) == 0:
+			// Keep the old depth AND the old list: an empty Repos pane is a state
+			// main.go won't even start in, so `?` must not be able to produce it.
+			return m, m.setStatus(styleOrange.Render(fmt.Sprintf(
+				"no repos at depth %d — staying at %d", msg.depth, m.cfg.MaxDepth)))
+		}
+		m.cfg.MaxDepth = msg.depth // commit only now that the walk paid off
+		m.saveConfig()
+		return m, m.applyRescan(msg.repos)
 	case latestTagMsg:
 		for _, r := range m.repos {
 			if r.repo.Path == msg.path {
@@ -235,6 +250,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 	return m, nil
+}
+
+// rescanCmd re-walks the root at depth, off the keystroke. It reports the depth
+// back untouched so the handler can commit it only if the walk paid off.
+func (m Model) rescanCmd(depth int) tea.Cmd {
+	root, prune := m.root, m.cfg.PruneSet()
+	return func() tea.Msg {
+		repos, err := discover.Discover(root, discover.Options{MaxDepth: depth, Prune: prune})
+		return rescanMsg{depth: depth, repos: repos, err: err}
+	}
+}
+
+// applyRescan swaps in a freshly discovered repo set. Repos that were already on
+// screen keep their loaded *repoVM — their status hasn't changed just because the
+// walk got wider, and re-stat'ing them would blank the list and re-fetch every
+// remote. Only genuinely new repos are stat'd and fetched.
+func (m *Model) applyRescan(found []discover.Repo) tea.Cmd {
+	prev := make(map[string]*repoVM, len(m.repos))
+	for _, r := range m.repos {
+		prev[r.repo.Path] = r
+	}
+	vms := make([]*repoVM, len(found))
+	var cmds []tea.Cmd
+	added := 0
+	for i, rp := range found {
+		if old, ok := prev[rp.Path]; ok {
+			vms[i] = old
+			continue
+		}
+		vm := &repoVM{repo: rp, fetching: true}
+		vms[i] = vm
+		added++
+		cmds = append(cmds, statusCmd(rp.Path), fetchCmd(m.sem, rp.Path))
+	}
+	dropped := len(m.repos) - (len(found) - added)
+	m.repos = vms
+	m.cursor = 0
+	m.clearBranchFilter()
+	cmds = append(cmds,
+		m.setStatus(styleGreen.Render(fmt.Sprintf("depth %d: %d repos (+%d, -%d)",
+			m.cfg.MaxDepth, len(found), added, dropped))),
+		m.loadContextCmd())
+	return tea.Batch(cmds...)
 }
 
 // loadTagsCmd loads the latest tag for every repo (fast local reads, ungated).
@@ -783,6 +841,14 @@ func (m *Model) settingsSelect() tea.Cmd {
 			m.cfg.NewsDays = d
 			m.saveConfig()
 			return m.forceRefreshNews() // apply the new window immediately
+		}
+	case skMaxDepth:
+		// Deliberately does NOT set cfg here: the walk has to find something
+		// first. rescanMsg commits the depth only on a non-empty result, so
+		// picking a depth with no repos under it leaves you where you were
+		// rather than staring at an empty pane.
+		if d, err := strconv.Atoi(r.val); err == nil && d != m.cfg.MaxDepth {
+			return m.rescanCmd(d)
 		}
 	case skGlyph:
 		m.cfg.StatusGlyphs = r.val

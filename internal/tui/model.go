@@ -57,7 +57,10 @@ type repoVM struct {
 
 // Model is the Bubble Tea model.
 type Model struct {
-	cfg   config.Config
+	cfg config.Config
+	// root is the directory the repos were discovered under. Kept so the scan
+	// can be re-run when the depth setting changes; main.go resolves it once.
+	root  string
 	repos []*repoVM
 
 	cursor int
@@ -223,8 +226,9 @@ func (m Model) visiblePRs() []gh.PullRequest {
 	return out
 }
 
-// New builds a Model from discovered repos and scripts.
-func New(cfg config.Config, repos []discover.Repo, scripts []discover.Script) Model {
+// New builds a Model from discovered repos and scripts. root is the directory
+// they were found under — the `?` screen's scan-depth setting re-walks it.
+func New(cfg config.Config, root string, repos []discover.Repo, scripts []discover.Script) Model {
 	vms := make([]*repoVM, len(repos))
 	for i, r := range repos {
 		vms[i] = &repoVM{repo: r}
@@ -236,6 +240,7 @@ func New(cfg config.Config, repos []discover.Repo, scripts []discover.Script) Mo
 	applyTheme(themeByName(cfg.Theme)) // set the themeable styles from config
 	m := Model{
 		cfg:     cfg,
+		root:    root,
 		repos:   vms,
 		scripts: scripts,
 		focus:   panelRepos,

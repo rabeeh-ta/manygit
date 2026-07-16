@@ -3,6 +3,7 @@ package tui
 import (
 	"bufio"
 
+	"manygit/internal/discover"
 	"manygit/internal/gh"
 	"manygit/internal/git"
 )
@@ -35,6 +36,16 @@ type discardDoneMsg struct {
 	path string
 	full bool // D (also removed untracked) vs d (tracked changes only)
 	err  error
+}
+
+// rescanMsg carries the result of re-walking the root at a new depth. depth is
+// the *candidate* — it is only committed to the config if the walk found repos,
+// so the setting can never leave the Repos pane empty (main.go refuses to start
+// with zero repos; the `?` screen must not be able to reach that state either).
+type rescanMsg struct {
+	depth int
+	repos []discover.Repo
+	err   error
 }
 
 // openDoneMsg is the result of launching the editor on a repo (o). err is set

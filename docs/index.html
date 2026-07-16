@@ -471,7 +471,11 @@
               <tbody>
                 <tr>
                   <td class="kt__k"><b>max_depth</b></td>
-                  <td>How deep to walk looking for repos. Default <code>3</code></td>
+                  <td>
+                    How many folders below the root to search for repos. Default <code>3</code>.
+                    Also a row in <b>?</b> — picking a depth re-walks the tree straight away, and a
+                    depth with no repos under it is refused rather than leaving you an empty list
+                  </td>
                 </tr>
                 <tr>
                   <td class="kt__k"><b>open_cmd</b></td>

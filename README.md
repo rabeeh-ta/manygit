@@ -65,7 +65,7 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `/` | filter the focused list by what it shows — repos match on name **and** current branch (`/master` finds every repo on master, and the tag too while `t` is on); branches match on name (type `feat` to find a remote branch among hundreds); scripts on name |
 | `o` | open the repo in your editor |
 | `z` | zoom the focused pane |
-| `?` | settings & help (themes, AI harness, glyphs, editor) |
+| `?` | settings & help (themes, AI harness, scan depth, glyphs, editor) |
 | `q` | quit |
 
 Status column: `ok` up to date · `↑N` ahead · `↓N` behind · `*N` dirty ·
@@ -100,11 +100,16 @@ hint and the top-bar/footer GitHub bits are omitted.
 `~/.config/manygit/config.yml` (also written by the `?` screen):
 
 ```yaml
-max_depth: 3
+max_depth: 3            # folders below the root to search for repos (1–5 in `?`)
 open_cmd: code          # `o` runs this in the repo: code | cursor | code -r | code .
 theme: default          # default | serika_dark | dracula | nord | catppuccin | 8008
 status_glyphs: unicode  # or "ascii"
 ```
+
+`max_depth` is also a setting in `?` — picking a depth re-walks the tree straight
+away, no restart. A depth with no repos under it is refused (manygit won't start
+on an empty tree, so it won't drop you into one either) and you keep the depth you
+had.
 
 `open_cmd` is the editor command as you'd type it in the repo — manygit adds the
 folder itself (a trailing `.` is fine). If it can't open, `o` now says why

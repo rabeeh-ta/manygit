@@ -55,6 +55,14 @@ func gitCmd(t *testing.T, dir string, args ...string) {
 // twoRepos builds a root with two committed repos ("alpha","bravo") in group "grp".
 func twoRepos(t *testing.T) (config.Config, []discover.Repo) {
 	t.Helper()
+	cfg, _, repos := twoReposIn(t)
+	return cfg, repos
+}
+
+// twoReposIn is twoRepos plus the root it scanned, for tests that re-walk it.
+// The repos sit at <root>/grp/<name> — depth 2 — so a depth-1 scan finds nothing.
+func twoReposIn(t *testing.T) (config.Config, string, []discover.Repo) {
+	t.Helper()
 	root := t.TempDir()
 	for _, name := range []string{"alpha", "bravo"} {
 		dir := filepath.Join(root, "grp", name)
@@ -73,7 +81,7 @@ func twoRepos(t *testing.T) (config.Config, []discover.Repo) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cfg, repos
+	return cfg, root, repos
 }
 
 // loadAll applies WindowSizeMsg + a statusMsg per repo, returning the settled model.
@@ -90,7 +98,7 @@ func loadAll(t *testing.T, m Model, w, h int) Model {
 
 func TestTUI_RendersReposAndQuits(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, New(cfg, "", repos, nil), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("alpha")) && bytes.Contains(b, []byte("bravo"))
 	}, teatest.WithDuration(3*time.Second))
@@ -100,7 +108,7 @@ func TestTUI_RendersReposAndQuits(t *testing.T) {
 
 func TestTUI_CursorMovesDown(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, New(cfg, "", repos, nil), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("alpha"))
 	}, teatest.WithDuration(3*time.Second))
@@ -119,7 +127,7 @@ var _ = strings.Split
 // leave the focus untouched in both panels.
 func TestTUI_EnterFocusesBranches(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30) // focus starts on Repos
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30) // focus starts on Repos
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
 	if mm.(Model).focus != panelRepos {
 		t.Error("space in the Repos panel should do nothing")
@@ -140,7 +148,7 @@ func TestTUI_EnterFocusesBranches(t *testing.T) {
 // swallows them (so an arrow can't yank focus mid-search).
 func TestTUI_ArrowsHopReposBranches(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30) // focus starts on Repos
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30) // focus starts on Repos
 
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	m = mm.(Model)
@@ -181,7 +189,7 @@ func TestTUI_ArrowsHopReposBranches(t *testing.T) {
 
 func TestTUI_FilterNarrowsList(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, New(cfg, "", repos, nil), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("bravo"))
 	}, teatest.WithDuration(3*time.Second))
@@ -219,7 +227,7 @@ func TestTUI_ScriptsPanel(t *testing.T) {
 		{Path: "/x/a.sh", Name: "a.sh"},
 		{Path: "/x/scripts/b.sh", Name: "scripts/b.sh"},
 	}
-	m := loadAll(t, New(cfg, repos, scripts), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, scripts), 100, 30)
 	m.focus = panelScripts
 
 	if v := stripANSI(m.View()); !strings.Contains(v, "a.sh") || !strings.Contains(v, "scripts/b.sh") {
@@ -235,7 +243,7 @@ func TestTUI_ScriptsPanel(t *testing.T) {
 		t.Errorf("expected a run command for the highlighted script")
 	}
 	// with no scripts, run is a no-op.
-	empty := loadAll(t, New(cfg, repos, nil), 100, 30)
+	empty := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	empty.focus = panelScripts
 	if empty.runScriptCmd() != nil {
 		t.Errorf("runScriptCmd with no scripts should be nil")
@@ -251,7 +259,7 @@ func TestTUI_SlashFiltersScripts(t *testing.T) {
 		{Path: "/x/sync-mfe.sh", Name: "sync-mfe.sh"},
 		{Path: "/x/deploy.sh", Name: "deploy.sh"},
 	}
-	m := loadAll(t, New(cfg, repos, scripts), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, scripts), 100, 30)
 	m.focus = panelScripts
 
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
@@ -283,7 +291,7 @@ func TestTUI_SlashFiltersScripts(t *testing.T) {
 // and checkout both index the filtered view.
 func TestTUI_SlashFiltersBranches(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	m.focus = panelBranches
 	m.branches = []git.Branch{
 		{Name: "master", IsCurrent: true},
@@ -327,7 +335,7 @@ func TestTUI_SlashFiltersBranches(t *testing.T) {
 // branches. A committed *repo* filter, by contrast, must survive repo navigation.
 func TestTUI_BranchFilterClearsOnRepoChange(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	m.focus = panelBranches
 	m.branches = []git.Branch{
 		{Name: "master", IsCurrent: true},
@@ -349,7 +357,7 @@ func TestTUI_BranchFilterClearsOnRepoChange(t *testing.T) {
 	}
 
 	// A committed REPO filter must NOT be wiped by repo navigation.
-	m2 := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m2 := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	m2.focus = panelRepos
 	m2.filter, m2.filterPanel = "a", panelRepos // matches both alpha and bravo... narrow later
 	mm, _ = m2.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -364,7 +372,7 @@ func TestTUI_BranchFilterClearsOnRepoChange(t *testing.T) {
 // destination"), mirroring the s handler.
 func TestTUI_PushSkipsUnloadedRepo(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := New(cfg, repos, nil) // no loadAll: repos start unloaded
+	m := New(cfg, "", repos, nil) // no loadAll: repos start unloaded
 	mm, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = mm.(Model)
 	if m.currentVisible(m.visibleRepos()).loaded {
@@ -384,7 +392,7 @@ func TestTUI_PushSkipsUnloadedRepo(t *testing.T) {
 // leaving the commit subject intact.
 func TestTUI_GraphRefsShortened(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	path := m.currentVisible(m.visibleRepos()).repo.Path
 	long := "* \x1b[1;32m" + strings.Repeat("z", 40) + "\x1b[m short: subject"
 	mm, _ := m.Update(graphMsg{path: path, lines: []string{long}})
@@ -402,7 +410,7 @@ func TestTUI_GraphRefsShortened(t *testing.T) {
 // fit, and rows stay equal width so the columns don't drift.
 func TestTUI_RepoRowShowsBranch(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 120, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 30)
 	d := computeDims(120, 30, false)
 	m.repos[0].status = git.RepoStatus{Branch: "main"}
 	m.repos[1].status = git.RepoStatus{Branch: "feature/really-long-branch-that-overflows-the-column"}
@@ -461,7 +469,7 @@ func TestTUI_TitledBoxNonASCIILabel(t *testing.T) {
 // Branch names are shown in full in the panel (the panel has ample width).
 func TestTUI_BranchNamesShownInFull(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
 	m.focus = panelBranches
 	m.branches = []git.Branch{
 		{Name: "PROJ-1234-implement-the-new-onboarding-flow"},
@@ -480,7 +488,7 @@ func TestTUI_BranchNamesShownInFull(t *testing.T) {
 // esc closes.
 func TestTUI_GraphOverlay(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	// simulate loadContextCmd having loaded the graph
 	path := m.currentVisible(m.visibleRepos()).repo.Path
 	mm, _ := m.Update(graphMsg{path: path, lines: []string{"* a", "* b", "* c"},
@@ -514,7 +522,7 @@ func TestTUI_GraphOverlay(t *testing.T) {
 func TestTUI_BottomViewsAndSelection(t *testing.T) {
 	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	path := m.currentVisible(m.visibleRepos()).repo.Path
 	mm, _ := m.Update(graphMsg{path: path, lines: []string{"* aaaaaaa fix", "* bbbbbbb add"},
 		commits: []git.GraphEntry{{Line: 0, Hash: "aaaaaaa"}, {Line: 1, Hash: "bbbbbbb"}}})
@@ -577,7 +585,7 @@ func TestTUI_BottomViewsAndSelection(t *testing.T) {
 func TestTUI_GraphDrillDown(t *testing.T) {
 	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	path := m.currentVisible(m.visibleRepos()).repo.Path
 	mm, _ := m.Update(graphMsg{path: path, lines: []string{"* aaaaaaa first"},
 		commits: []git.GraphEntry{{Line: 0, Hash: "aaaaaaa"}}})
@@ -633,7 +641,7 @@ func TestTUI_ReposScroll(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		repos = append(repos, discover.Repo{Path: fmt.Sprintf("/x/r%02d", i), Name: fmt.Sprintf("repo-%02d", i), Group: "g"})
 	}
-	m := New(config.Default(), repos, nil)
+	m := New(config.Default(), "", repos, nil)
 	m.width, m.height = 100, 20
 	d := computeDims(100, 20, false)
 
@@ -655,7 +663,7 @@ func TestTUI_ReposScroll(t *testing.T) {
 // it to follow the highlighted repo (it used to stay stuck on the first repo).
 func TestTUI_ChangesFollowsRepoCursor(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 
 	// open Changes (6), then focus Repos (1)
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("6")})
@@ -736,7 +744,7 @@ func TestFitNameSuffixes(t *testing.T) {
 // default, on loads the tags, and the tag renders after the branch.
 func TestTUI_TagsInlineToggle(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	if m.showTagsInline {
 		t.Fatal("inline tags should be off by default")
 	}
@@ -783,7 +791,7 @@ func TestTUI_TagsInlineToggle(t *testing.T) {
 // closes.
 func TestTUI_NewsView(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	m.newsFeed = []string{"a shipped X", "b fixed Y", "c released v2", "d refactored Z"}
 
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
@@ -813,7 +821,7 @@ func TestTUI_NewsView(t *testing.T) {
 // d/D arm a discard confirmation on the highlighted repo; nothing runs until y.
 func TestTUI_DiscardConfirm(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	// make the highlighted repo look dirty so the discard isn't a no-op
 	m.repos[0].status.DirtyCount = 2
 
@@ -853,7 +861,7 @@ func TestTUI_DiscardConfirm(t *testing.T) {
 // A discard on a repo known to be clean is a no-op (no confirmation armed).
 func TestTUI_DiscardCleanNoop(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	m.repos[0].status.DirtyCount = 0 // clean (loadAll set loaded=true)
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("D")})
 	m = mm.(Model)
@@ -865,7 +873,7 @@ func TestTUI_DiscardCleanNoop(t *testing.T) {
 // Regaining terminal-window focus refetches every repo (like `r`).
 func TestTUI_FocusRefetch(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	for _, r := range m.repos {
 		r.fetching = false
 	}
@@ -885,7 +893,7 @@ func TestTUI_FocusRefetch(t *testing.T) {
 // alt-tabbing doesn't spray git fetches; once the cooldown lapses, it refetches.
 func TestTUI_FocusRefetchCooldown(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	for _, r := range m.repos {
 		r.fetching = false
 	}
@@ -919,7 +927,7 @@ func TestTUI_FocusRefetchCooldown(t *testing.T) {
 func TestTUI_Zoom(t *testing.T) {
 	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 
 	mm, _ := m.Update(rk("z"))
 	m = mm.(Model)
@@ -957,7 +965,7 @@ func TestTUI_Zoom(t *testing.T) {
 // expiry clears it, but a stale one (older generation) must not.
 func TestTUI_StatusLineExpires(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 
 	mm, cmd := m.Update(pushDoneMsg{path: m.repos[0].repo.Path})
 	m = mm.(Model)
@@ -984,7 +992,7 @@ func TestTUI_StatusLineExpires(t *testing.T) {
 // F toggles a filter that shows only repos with changes / ahead / behind.
 func TestTUI_AttentionFilter(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	m.repos[0].status = git.RepoStatus{HasUpstream: true, DirtyCount: 2} // needs attention
 	m.repos[0].loaded = true
 	m.repos[1].status = git.RepoStatus{HasUpstream: true} // clean & in sync
@@ -1011,7 +1019,7 @@ func TestTUI_SyncSkipsDirtyRepo(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repos[0].Path, "dirty.txt"), []byte("z\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, New(cfg, "", repos, nil), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("*1"))
 	}, teatest.WithDuration(3*time.Second))
@@ -1026,7 +1034,7 @@ func TestTUI_SyncSkipsDirtyRepo(t *testing.T) {
 func TestTUI_ShowsBranchesForHighlighted(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	gitCmd(t, repos[0].Path, "branch", "feature")
-	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, New(cfg, "", repos, nil), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("feature")) && bytes.Contains(b, []byte("master"))
 	}, teatest.WithDuration(3*time.Second))
@@ -1036,7 +1044,7 @@ func TestTUI_ShowsBranchesForHighlighted(t *testing.T) {
 
 func TestTUI_ShowsLogForHighlighted(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	tm := teatest.NewTestModel(t, New(cfg, repos, nil), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, New(cfg, "", repos, nil), teatest.WithInitialTermSize(120, 40))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("init"))
 	}, teatest.WithDuration(3*time.Second))
@@ -1049,7 +1057,7 @@ func TestTUI_ShowsLogForHighlighted(t *testing.T) {
 func TestTUI_LinesFitWidth(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	for _, w := range []int{80, 100, 160, 200} {
-		m := loadAll(t, New(cfg, repos, nil), w, 30)
+		m := loadAll(t, New(cfg, "", repos, nil), w, 30)
 		for _, line := range strings.Split(m.View(), "\n") {
 			if got := lipgloss.Width(line); got > w {
 				t.Errorf("w=%d: line width %d > %d: %q", w, got, w, line)
@@ -1064,7 +1072,7 @@ func TestTUI_LinesFitWidth(t *testing.T) {
 func TestTUI_RepoRowsFitPanelContent(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	for _, w := range []int{80, 81, 82, 83, 100, 160, 200} {
-		m := loadAll(t, New(cfg, repos, nil), w, 30)
+		m := loadAll(t, New(cfg, "", repos, nil), w, 30)
 		d := computeDims(w, 30, false)
 		content := d.leftW - 2 // panelStyle Padding(0,1) → content area is leftW-2
 		for _, line := range strings.Split(m.renderRepoBody(d, 30), "\n") {
@@ -1103,7 +1111,7 @@ func TestTUI_DecorativeGlyphsAreASCII(t *testing.T) {
 	}
 	// cursor prefix via a rendered highlighted row
 	cfg, repos := twoRepos(t)
-	m := New(cfg, repos, nil)
+	m := New(cfg, "", repos, nil)
 	if row := stripANSI(m.renderRow(0, m.repos[0], 12)); !isASCII(row) {
 		t.Errorf("renderRow (cursor row) = %q is not ASCII", row)
 	}
@@ -1113,7 +1121,7 @@ func TestTUI_DecorativeGlyphsAreASCII(t *testing.T) {
 // the bottom slot shows all three of its views (4/5/6) as a tab bar.
 func TestTUI_PanelsShowNumbers(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
 	view := stripANSI(m.View())
 	for _, want := range []string{"[1] Repos", "[2] Scripts", "3 Branches", "4 PRs", "5 Graph", "6 Changes", "7 Output"} {
 		if !strings.Contains(view, want) {
@@ -1150,7 +1158,7 @@ func TestTUI_TabBars(t *testing.T) {
 // branch names / graph lines / file paths can't wrap and grow the panel off-axis.
 func TestTUI_PanelLinesFitContentWidth(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	m.branches = []git.Branch{{Name: strings.Repeat("b", 300)}}
 	m.graphLines = []string{strings.Repeat("x", 300)}
 	m.changeFiles = []git.FileChange{{Status: "M", Path: strings.Repeat("p", 300)}}
@@ -1173,7 +1181,7 @@ func TestTUI_PanelLinesFitContentWidth(t *testing.T) {
 // (which would reload the panels and make branches "change on every keystroke").
 func TestTUI_BranchNavIsPanelScoped(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	m.branches = []git.Branch{{Name: "a"}, {Name: "b"}, {Name: "c"}}
 	m.focus = panelBranches
 	startRepo := m.cursor
@@ -1226,7 +1234,7 @@ func TestTUI_NoRemoteRepo(t *testing.T) {
 
 	// twoRepos builds plain `git init` repos — local-only, so s and p must skip.
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	if !strings.Contains(stripANSI(m.View()), "no-remote") {
 		t.Error("the Repos panel should mark a local-only repo no-remote")
 	}
@@ -1246,7 +1254,7 @@ func TestTUI_NoRemoteRepo(t *testing.T) {
 // ? opens the settings overlay; tab flips to the keybindings/legend view; esc closes.
 func TestTUI_HelpOverlay(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 100, 30)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	m = mm.(Model)
 	if !m.showHelp {
@@ -1273,7 +1281,7 @@ func TestTUI_HelpOverlay(t *testing.T) {
 func TestTUI_PRPaneToggle(t *testing.T) {
 	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
 	m.ghProbed, m.ghAvailable, m.ghUser = true, true, "rabeeh-ta"
 	m.prLoaded = true
 	m.prMine = []gh.PullRequest{{Number: 1, Title: "mine one", Author: "rabeeh-ta", RepoSlug: "o/a"}}
@@ -1310,7 +1318,7 @@ func TestTUI_PRPaneToggle(t *testing.T) {
 	}
 
 	// m outside the PR pane does nothing.
-	m2 := loadAll(t, New(cfg, repos, nil), 120, 40) // focus starts on Repos
+	m2 := loadAll(t, New(cfg, "", repos, nil), 120, 40) // focus starts on Repos
 	m2.prShowReview = false
 	mm, _ = m2.Update(rk("m"))
 	if got := mm.(Model); got.prShowReview || got.focus != panelRepos {
@@ -1323,7 +1331,7 @@ func TestTUI_PRPaneToggle(t *testing.T) {
 func TestTUI_PRFilterScoped(t *testing.T) {
 	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
 	m.ghProbed, m.ghAvailable = true, true
 	m.prLoaded = true
 	m.prMine = []gh.PullRequest{
@@ -1362,7 +1370,7 @@ func TestTUI_PRFilterScoped(t *testing.T) {
 func TestTUI_PRNav(t *testing.T) {
 	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
 	m.ghProbed, m.ghAvailable, m.prLoaded = true, true, true
 	m.prMine = []gh.PullRequest{{Number: 1}, {Number: 2}, {Number: 3}}
 	mm, _ := m.Update(rk("4"))
@@ -1385,7 +1393,7 @@ func TestTUI_PRNav(t *testing.T) {
 // executed here (we only assert the decision + status).
 func TestTUI_PRCheckoutDecision(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
 	m.ghProbed, m.ghAvailable, m.prLoaded = true, true, true
 	m.focus, m.topView = panelBranches, tvPRs
 	m.repos[0].status.Slug = "acme/widgets"
@@ -1419,7 +1427,7 @@ func TestTUI_PRCheckoutDecision(t *testing.T) {
 // checkout leaves you on the PRs view with an error.
 func TestTUI_PRCheckoutLandsOnBranches(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
 	m.focus, m.topView, m.prShowReview, m.prCursor = panelBranches, tvPRs, true, 3
 	target := m.repos[1].repo.Path
 
@@ -1436,7 +1444,7 @@ func TestTUI_PRCheckoutLandsOnBranches(t *testing.T) {
 	}
 
 	// a failed checkout stays on the PRs view with an error status.
-	m2 := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m2 := loadAll(t, New(cfg, "", repos, nil), 120, 40)
 	m2.focus, m2.topView = panelBranches, tvPRs
 	mm, _ = m2.Update(prCheckoutDoneMsg{path: target, number: 42, err: fmt.Errorf("boom")})
 	if g := mm.(Model); g.topView != tvPRs || !strings.Contains(stripANSI(g.statusLine), "failed") {
@@ -1448,7 +1456,7 @@ func TestTUI_PRCheckoutLandsOnBranches(t *testing.T) {
 // available; both vanish without it.
 func TestTUI_PRBadgeAndIndicator(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
 	m.ghProbed, m.ghAvailable, m.ghUser = true, true, "rabeeh-ta"
 	m.prReview = make([]gh.PullRequest, 2)
 	m.prMine = make([]gh.PullRequest, 1)
@@ -1467,7 +1475,7 @@ func TestTUI_PRBadgeAndIndicator(t *testing.T) {
 // The PR pane hints why it's empty when gh isn't usable.
 func TestTUI_PRUnavailableHint(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
 	m.ghProbed, m.ghInstalled, m.ghAvailable = true, false, false
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
 	if v := stripANSI(mm.(Model).View()); !strings.Contains(v, "gh not installed") {
@@ -1479,7 +1487,7 @@ func TestTUI_PRUnavailableHint(t *testing.T) {
 // unavailable probe loads nothing. (The load commands are not executed here.)
 func TestTUI_GhProbeAndPrsMsg(t *testing.T) {
 	cfg, repos := twoRepos(t)
-	m := loadAll(t, New(cfg, repos, nil), 120, 40)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
 	mm, cmd := m.Update(ghProbeMsg{installed: true, available: true, user: "u"})
 	m = mm.(Model)
 	if !m.ghAvailable || m.ghUser != "u" || cmd == nil {
@@ -1495,7 +1503,7 @@ func TestTUI_GhProbeAndPrsMsg(t *testing.T) {
 		t.Fatal("prsMsg(mine) should fill prMine")
 	}
 
-	_, cmd2 := loadAll(t, New(cfg, repos, nil), 120, 40).Update(ghProbeMsg{})
+	_, cmd2 := loadAll(t, New(cfg, "", repos, nil), 120, 40).Update(ghProbeMsg{})
 	if cmd2 != nil {
 		t.Error("an unavailable probe should not load PRs")
 	}

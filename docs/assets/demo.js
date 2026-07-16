@@ -19,8 +19,10 @@
   ];
   // newsDayOptions, from internal/tui/settings.go
   var NEWS_DAYS = [1, 3, 7, 14];
+  // maxDepthOptions, from internal/tui/settings.go. config.Default() ships 3.
+  var MAX_DEPTHS = [1, 2, 3, 4, 5];
 
-  var SK_THEME = 0, SK_HARNESS = 1, SK_NEWSDAYS = 2, SK_GLYPH = 3, SK_EDITOR = 4;
+  var SK_THEME = 0, SK_HARNESS = 1, SK_NEWSDAYS = 2, SK_MAXDEPTH = 3, SK_GLYPH = 4, SK_EDITOR = 5;
 
   var STORE = "manygit.theme";
   var ROOT = "~/code";
@@ -37,13 +39,19 @@
       remote: o.remote !== false,
       up: o.up !== false,
       tag: o.tag || "",
-      loaded: true,
+      // New() leaves every repo unloaded; Init() is what loads and fetches them.
+      // boot() replays that, so these are the pre-Init values.
+      loaded: false,
       fetching: false
     };
   }
 
   // Sorted by group then name — matching discover.Discover's sort order.
+  // "(root)" is discover's group for a repo sitting directly in the root, and it
+  // sorts before the named folders. Depths vary so the `?` scan-depth setting has
+  // something to actually do: 1 finds only dotfiles, 3 reaches infra/edge.
   var REPOS = [
+    repo("(root)", "dotfiles", "main", { tag: "v1.0.0" }),
     repo("apps", "api-gateway", "main", { dirty: 3, ahead: 2, tag: "v2.3.1" }),
     repo("apps", "billing-worker", "main", { tag: "v1.9.0" }),
     repo("apps", "mobile-client", "main", { behind: 4, tag: "v5.2.0" }),
@@ -52,12 +60,26 @@
     repo("infra", "k8s-manifests", "staging", { behind: 2, tag: "2024.11" }),
     repo("infra", "runbooks", "main", { remote: false, up: false }),
     repo("infra", "terraform-live", "main", {}),
+    repo("infra/edge", "edge-proxy", "main", { dirty: 2, tag: "v0.4.1" }),
     repo("packages", "design-system", "main", { tag: "v12.0.1" }),
     repo("packages", "eslint-config", "main", {}),
     repo("packages", "sdk-js", "release/2.4", { ahead: 1, behind: 3, tag: "v2.4.0-rc1" }),
     repo("packages", "telemetry", "main", { dirty: 1, tag: "v0.8.4" })
   ];
-  REPOS.forEach(function (r) { r.path = ROOT + "/" + r.g + "/" + r.n; });
+  REPOS.forEach(function (r) {
+    // discover.Repo.Group is the parent dir relative to the root, or "(root)".
+    // Depth follows from it: a repo in the root is 1, one in "apps" is 2, one in
+    // "infra/edge" is 3.
+    r.depth = r.g === "(root)" ? 1 : r.g.split("/").length + 1;
+    r.path = r.g === "(root)" ? ROOT + "/" + r.n : ROOT + "/" + r.g + "/" + r.n;
+  });
+
+  // discovered() is what MaxDepth gates: the scan depth decides which repos
+  // *exist*, exactly as discover.Discover's MaxDepth does. It is not a view
+  // filter — `/` and `F` narrow what this returns, never the other way round.
+  function discovered() {
+    return REPOS.filter(function (r) { return r.depth <= S.maxDepth; });
+  }
 
   var SCRIPTS = [
     { name: "bootstrap.sh" },
@@ -321,10 +343,26 @@
     confirmFull: false,
     confirmName: "",
 
+    // gh availability, resolved by ghProbeCmd after Init. Until it returns, the
+    // PRs pane says "checking GitHub..." and the badge/indicator are absent.
+    ghProbed: false,
+    ghInstalled: false,
+    ghAvailable: false,
+    ghUser: "",
+    prLoaded: false,
+
+    // top-bar news. Empty until the harness summarises; newsLoading drives the
+    // "summarizing commits..." note next to the repo count.
+    newsFeed: [],
+    newsLoading: false,
+
+    booted: false,
+
     // config (the ? screen writes these; theme + glyphs persist)
     theme: "serika_dark",
     harness: "claude",
     newsDays: 3,
+    maxDepth: 3,
     glyphs: "unicode",
     openCmd: "code"
   };
@@ -398,8 +436,9 @@
 
   function visibleRepos() {
     var needle = S.filterPanel === "repos" ? S.filter.toLowerCase() : "";
-    if (!needle && !S.filterAttention) return REPOS;
-    return REPOS.filter(function (r) {
+    var all = discovered();
+    if (!needle && !S.filterAttention) return all;
+    return all.filter(function (r) {
       if (needle && repoHaystack(r).indexOf(needle) < 0) return false;
       if (S.filterAttention && !needsAttention(r)) return false;
       return true;
@@ -564,15 +603,86 @@
       (hint ? "<div>" + hint + "</div>" : "") + "</div>";
   }
 
+  // boot replays Init(): every repo is unloaded and immediately marked fetching,
+  // so a row goes "." -> "~" -> its real glyph as the local status read lands and
+  // then the fetch returns. Timings stand in for the real work — the *order* is
+  // Init's, and the fetch waves are the concurrency semaphore (cfg.Concurrency,
+  // 8) letting eight repos through at a time.
+  var CONCURRENCY = 8;
+  function boot() {
+    if (S.booted) return;
+    S.booted = true;
+
+    var repos = discovered();
+    repos.forEach(function (r) { r.loaded = false; r.fetching = true; });
+    branches = [];
+    graph = [];
+    S.ghProbed = false;
+    S.ghAvailable = false;
+    S.ghUser = "";
+    S.prLoaded = false;
+    S.newsFeed = [];
+    S.newsLoading = false;
+    S.newsIndex = 0;
+    render();
+
+    var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { bootFinish(repos); return; } // no reveal; land on the loaded state
+
+    // statusCmd per repo: fast local reads, ungated, so they land quickly
+    repos.forEach(function (r, i) {
+      setTimeout(function () { r.loaded = true; render(); }, 120 + i * 40);
+    });
+
+    // fetchCmd per repo: gated by the semaphore, so they return in waves
+    repos.forEach(function (r, i) {
+      var wave = Math.floor(i / CONCURRENCY);
+      setTimeout(function () { r.fetching = false; render(); }, 640 + wave * 420 + (i % CONCURRENCY) * 55);
+    });
+
+    setTimeout(function () { loadContext(); render(); }, 300);           // loadContextCmd
+    setTimeout(function () {                                              // ghProbeCmd
+      S.ghProbed = true; S.ghInstalled = true; S.ghAvailable = true; S.ghUser = "rabeeh-ta";
+      render();
+      setTimeout(function () { S.prLoaded = true; render(); }, 260 );    // then both PR lists
+    }, 780);
+    setTimeout(function () { S.newsLoading = true; render(); }, 900);     // harness summarising
+    setTimeout(function () {                                              // newsFeedMsg
+      S.newsLoading = false; S.newsFeed = NEWS.slice(); render();
+    }, 2100);
+  }
+
+  // bootFinish is the settled state, with no reveal — used under reduced motion.
+  function bootFinish(repos) {
+    repos.forEach(function (r) { r.loaded = true; r.fetching = false; });
+    S.ghProbed = true; S.ghInstalled = true; S.ghAvailable = true; S.ghUser = "rabeeh-ta";
+    S.prLoaded = true;
+    S.newsFeed = NEWS.slice();
+    loadContext();
+    render();
+  }
+
+  // prUnavailableHint explains why the PR pane is empty when gh isn't usable —
+  // still probing, not installed, or installed but not signed in.
+  function prUnavailableHint() {
+    if (!S.ghProbed) return "checking GitHub...";
+    if (!S.ghInstalled) return "gh not installed\nsee cli.github.com to enable the PRs tab";
+    return "gh found but not signed in\nrun: gh auth login";
+  }
+
   function prEmptyState() {
     if (S.filterPanel === "prs" && S.filter)
       return [d('No PRs match "' + S.filter + '"'), d("esc to clear the filter")];
+    if (!S.prLoaded) return [d("Loading PRs..."), ""];
     if (S.prShowReview)
       return [d("You're all caught up"), d("no PRs awaiting your review  ·  m: my PRs")];
     return [d("No open PRs authored by you"), d("m: review requests")];
   }
 
   function renderPRs(h) {
+    if (!S.ghAvailable) {
+      return centerBlock(d(prUnavailableHint()).replace(/\n/g, "<br>"));
+    }
     var my = "my PRs (" + PR_MINE.length + ")";
     var rev = "review requests (" + PR_REVIEW.length + ")";
     var header = S.prShowReview
@@ -711,6 +821,7 @@
   /* -- bars ---------------------------------------------------------------- */
 
   function prBadge() {
+    if (!S.ghAvailable) return "";
     var rev = PR_REVIEW.length, mine = PR_MINE.length;
     if (!rev && !mine) return "";
     var parts = [];
@@ -720,11 +831,17 @@
   }
   function topBarMain() {
     if (S.filtering || S.filter || S.filterAttention) {
-      var c = visibleRepos().length + " of " + REPOS.length + " repos";
+      var c = visibleRepos().length + " of " + discovered().length + " repos";
       return d(c) + (S.filterAttention ? "  " + yl("[changed / unsynced]") : "");
     }
-    var line = gp("news ") + esc(NEWS[S.newsIndex % NEWS.length]);
-    if (NEWS.length > 1) line += d("   (" + ((S.newsIndex % NEWS.length) + 1) + "/" + NEWS.length + ")");
+    if (!S.newsFeed.length) {
+      var count = discovered().length + " repos";
+      return d(count) + (S.newsLoading ? d("   summarizing commits...") : "");
+    }
+    var line = gp("news ") + esc(S.newsFeed[S.newsIndex % S.newsFeed.length]);
+    if (S.newsFeed.length > 1) {
+      line += d("   (" + ((S.newsIndex % S.newsFeed.length) + 1) + "/" + S.newsFeed.length + ")");
+    }
     return line;
   }
   function statusOrFilter() {
@@ -740,7 +857,8 @@
     var hi = S.harness
       ? (harnessOK ? gp("harness: " + S.harness) : d("harness: " + S.harness + " (n/a)"))
       : d("no AI harness");
-    return gp("github: rabeeh-ta") + hi;
+    // githubIndicator: absent until gh is probed AND authed
+    return (S.ghAvailable && S.ghUser ? gp("github: " + S.ghUser) : "") + hi;
   }
 
   /* -- panes --------------------------------------------------------------- */
@@ -760,6 +878,7 @@
     THEMES.forEach(function (t) { rows.push({ kind: SK_THEME, val: t }); });
     HARNESSES.forEach(function (h) { rows.push({ kind: SK_HARNESS, val: h.name }); });
     NEWS_DAYS.forEach(function (n) { rows.push({ kind: SK_NEWSDAYS, val: String(n) }); });
+    MAX_DEPTHS.forEach(function (n) { rows.push({ kind: SK_MAXDEPTH, val: String(n) }); });
     rows.push({ kind: SK_GLYPH, val: "unicode" }, { kind: SK_GLYPH, val: "ascii" });
     rows.push({ kind: SK_EDITOR, val: "" });
     return rows;
@@ -774,6 +893,7 @@
     hdr[SK_THEME] = gp("Theme") + d("   (previews live)");
     hdr[SK_HARNESS] = gp("AI harness") + d("   (grayed = not installed)");
     hdr[SK_NEWSDAYS] = gp("News window") + d("   (top-bar feed lookback)");
+    hdr[SK_MAXDEPTH] = gp("Scan depth") + d("   (folders below the root to search; rescans on select)");
     hdr[SK_GLYPH] = gp("Ahead / behind glyphs");
     hdr[SK_EDITOR] = gp("Editor") + d("   (`o` opens the repo — e.g. code, cursor, code -r)");
 
@@ -792,6 +912,11 @@
       } else if (r.kind === SK_NEWSDAYS) {
         var n = parseInt(r.val, 10);
         mid.push(line(on, radio(S.newsDays === n), n === 1 ? "1 day" : n + " days"));
+      } else if (r.kind === SK_MAXDEPTH) {
+        var dp = parseInt(r.val, 10);
+        var dl = dp === 1 ? "1 level" : dp + " levels";
+        if (dp === 3) dl += "  (default)"; // config.Default().MaxDepth
+        mid.push(line(on, radio(S.maxDepth === dp), dl));
       } else if (r.kind === SK_GLYPH) {
         var gl = r.val === "ascii" ? "ascii    (+ / -)" : "unicode  (arrows)";
         mid.push(line(on, radio(r.val === S.glyphs), gl));
@@ -929,7 +1054,7 @@
     else { title = d("[1] Repos"); body = renderRepos(h); }
     el.screen.innerHTML =
       '<div class="term__top"><span class="term__brand">manygit</span>' +
-      '<span class="term__news">' + d(REPOS.length + " repos") + d("   [zoom — z to restore]") + "</span></div>" +
+      '<span class="term__news">' + d(discovered().length + " repos") + d("   [zoom — z to restore]") + "</span></div>" +
       '<div class="term__body term__body--zoom">' + pane(title, true, body, "zoom") + "</div>" + foot;
   }
 
@@ -941,9 +1066,9 @@
     return pane(d("Graph: " + (r ? r.n : "(no repo)") + "  (j/k scroll, esc close)"), true, body, "gfull");
   }
   function newsOverlay(h) {
-    var lines = NEWS.map(function (n, i) { return "<div>" + d(String(i + 1).padStart(2) + " ") + esc(n) + "</div>"; });
+    var lines = S.newsFeed.map(function (n, i) { return "<div>" + d(String(i + 1).padStart(2) + " ") + esc(n) + "</div>"; });
     var start = clamp(S.newsOffset, 0, Math.max(0, lines.length - 1));
-    return pane(d("News — " + NEWS.length + " headlines  (j/k scroll, esc close)"), true,
+    return pane(d("News — " + S.newsFeed.length + " headlines  (j/k scroll, esc close)"), true,
       lines.slice(start, start + h).join(""), "nfull");
   }
 
@@ -962,6 +1087,26 @@
   function clearPRFilter() {
     if (S.filterPanel === "prs") { S.filter = ""; S.filterPanel = "repos"; S.prCursor = 0; }
   }
+  // setMaxDepth mirrors the Go rescanMsg handler: the depth is only committed if
+  // the walk actually finds repos. main.go refuses to start on an empty tree, so
+  // `?` must not be able to drop you into one either — a fruitless depth keeps
+  // both the old depth and the old list.
+  function setMaxDepth(depth) {
+    if (depth === S.maxDepth) return; // no walk at all
+    var found = REPOS.filter(function (r) { return r.depth <= depth; });
+    if (!found.length) {
+      setStatus(og("no repos at depth " + depth + " — staying at " + S.maxDepth));
+      return;
+    }
+    var before = discovered().length;
+    S.maxDepth = depth;
+    S.cursor = 0;
+    clearBranchFilter();
+    loadContext();
+    var added = Math.max(0, found.length - before), dropped = Math.max(0, before - found.length);
+    setStatus(gr("depth " + depth + ": " + found.length + " repos (+" + added + ", -" + dropped + ")"));
+  }
+
   function clearBranchFilter() {
     if (S.filterPanel === "branches") { S.filter = ""; S.filterPanel = "repos"; S.branchCursor = 0; }
   }
@@ -1048,14 +1193,14 @@
     var prs = visiblePRs();
     if (S.prCursor < 0 || S.prCursor >= prs.length) return;
     var pr = prs[S.prCursor];
-    var target = REPOS.filter(function (r) { return r.n === pr.repo; })[0];
+    var target = discovered().filter(function (r) { return r.n === pr.repo; })[0];
     if (!target) { setStatus(og("PR repo " + pr.repo + " is not in view")); return; }
     if (target.dirty > 0) { setStatus(og("checkout skipped: dirty working tree in " + target.n)); return; }
     // focusRepoByPath: land on that repo's Branches, ready to review. Note
     // topView flips back to Branches — the fix from TestTUI_PRCheckoutLandsOnBranches.
     target.b = "pr-" + pr.num;
     S.filter = ""; S.filterPanel = "repos"; S.filterAttention = false;
-    S.cursor = REPOS.indexOf(target);
+    S.cursor = discovered().indexOf(target);
     S.branchCursor = 0;
     S.focus = "branches";
     S.topView = "branches";
@@ -1074,9 +1219,9 @@
   }
 
   function refetchAll() {
-    REPOS.forEach(function (r) { r.fetching = true; });
+    discovered().forEach(function (r) { r.fetching = true; });
     render();
-    REPOS.forEach(function (r, i) {
+    discovered().forEach(function (r, i) {
       setTimeout(function () { r.fetching = false; render(); }, 260 + i * 70);
     });
   }
@@ -1119,6 +1264,7 @@
         var h = HARNESSES.filter(function (x) { return x.name === r.val; })[0];
         if (h.installed) S.harness = r.val;
       } else if (r.kind === SK_NEWSDAYS) S.newsDays = parseInt(r.val, 10);
+      else if (r.kind === SK_MAXDEPTH) setMaxDepth(parseInt(r.val, 10));
       else if (r.kind === SK_GLYPH) S.glyphs = r.val;
       else { S.editingOpenCmd = true; S.openCmdBuf = S.openCmd; }
     }
@@ -1130,7 +1276,7 @@
     if (S.confirmDiscard) {
       S.confirmDiscard = false;
       if (k === "y") {
-        var r = REPOS.filter(function (x) { return x.n === S.confirmName; })[0];
+        var r = discovered().filter(function (x) { return x.n === S.confirmName; })[0];
         if (r) { r.dirty = 0; delete WIP_FILES[r.n]; loadChanges(); }
         setStatus(gr("discarded " + (S.confirmFull ? "all changes" : "tracked changes") + " in " + S.confirmName));
       } else setStatus(esc("discard cancelled"));
@@ -1145,7 +1291,7 @@
     }
     if (S.showNews) {
       if (k === "n" || k === "Escape") S.showNews = false;
-      else if (k === "j" || k === "ArrowDown") S.newsOffset = Math.min(S.newsOffset + 1, NEWS.length - 1);
+      else if (k === "j" || k === "ArrowDown") S.newsOffset = Math.min(S.newsOffset + 1, S.newsFeed.length - 1);
       else if (k === "k" || k === "ArrowUp") S.newsOffset = Math.max(0, S.newsOffset - 1);
       return;
     }
@@ -1342,7 +1488,7 @@
     render();
 
     el.term.addEventListener("keydown", onKey);
-    el.term.addEventListener("focus", render);
+    el.term.addEventListener("focus", function () { boot(); render(); });
     el.term.addEventListener("blur", render);
     window.addEventListener("resize", render);
 
@@ -1352,6 +1498,7 @@
     Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
       b.addEventListener("click", function (e) {
         if (e.detail > 0) el.term.focus();
+        boot(); // a keyboard-activated button never fires the term's focus event
         handleKey(b.getAttribute("data-key"));
         render();
       });
@@ -1360,8 +1507,8 @@
     // rotate the news headline, like newsTickCmd
     if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setInterval(function () {
-        if (S.showHelp || S.showGraph || S.showNews) return;
-        S.newsIndex = (S.newsIndex + 1) % NEWS.length;
+        if (S.showHelp || S.showGraph || S.showNews || S.newsFeed.length < 2) return;
+        S.newsIndex = (S.newsIndex + 1) % S.newsFeed.length;
         render();
       }, 6000);
     }

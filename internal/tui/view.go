@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"manygit/internal/config"
 	"manygit/internal/git"
 	"manygit/internal/harness"
 )
@@ -754,6 +755,8 @@ func (m Model) settingsBody() string {
 			return styleGroup.Render("AI harness") + styleDim.Render("   (grayed = not installed)")
 		case skNewsDays:
 			return styleGroup.Render("News window") + styleDim.Render("   (top-bar feed lookback)")
+		case skMaxDepth:
+			return styleGroup.Render("Scan depth") + styleDim.Render("   (folders below the root to search; rescans on select)")
 		case skGlyph:
 			return styleGroup.Render("Ahead / behind glyphs")
 		default:
@@ -763,6 +766,7 @@ func (m Model) settingsBody() string {
 
 	// Build the scrollable middle (group headers + option rows) and track the
 	// line the cursor is on, so we can window it to keep the cursor visible.
+	defaultDepth := config.Default().MaxDepth // hoisted: this loop runs every render
 	var mid []string
 	cursorLine := 0
 	prev := settingKind(-1)
@@ -801,6 +805,16 @@ func (m Model) settingsBody() string {
 				label = "1 day"
 			}
 			mid = append(mid, line(cursor, radioMark(m.cfg.NewsDays == d), label))
+		case skMaxDepth:
+			d, _ := strconv.Atoi(r.val)
+			label := r.val + " levels"
+			if d == 1 {
+				label = "1 level"
+			}
+			if d == defaultDepth {
+				label += "  (default)"
+			}
+			mid = append(mid, line(cursor, radioMark(m.cfg.MaxDepth == d), label))
 		case skGlyph:
 			label := "unicode  (arrows)"
 			if r.val == "ascii" {
