@@ -731,6 +731,21 @@ a.chip:hover {
 .rd {
   color: var(--error);
 }
+/* The @handles in the PRs pane link to real GitHub profiles. It must be
+   indistinguishable from the .gp text around it, so both of the base `a` rules
+   are undone here: the border-bottom underline, and the accent colour swap on
+   hover. The pointer cursor is the entire affordance — you find it by aiming at
+   it. Underline appears only once you're already hovering, to confirm the hit. */
+.pane__body a.gh {
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+}
+.pane__body a.gh:hover,
+.pane__body a.gh:focus-visible {
+  color: var(--group);
+  border-bottom-color: currentColor;
+}
+
 .cur {
   color: var(--accent);
   font-weight: 700;

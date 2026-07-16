@@ -344,6 +344,16 @@
   var gp = function (s) { return sp("gp", s); };
   var cur = function (s) { return sp("cur", s); };
 
+  // The @author in the PRs pane. These are real GitHub logins, so the handle
+  // links to the profile — a real <a>, so middle-click, cmd-click and "copy link
+  // address" all behave. It is styled to look exactly like the plain .gp text it
+  // replaces; the cursor on hover is the only tell.
+  function ghUser(login) {
+    return '<a class="gp gh" href="https://github.com/' + encodeURIComponent(login) +
+      '" target="_blank" rel="noopener noreferrer" title="@' + esc(login) + ' on GitHub">' +
+      esc("@" + login) + "</a>";
+  }
+
   // window(), ported verbatim from view.go
   function win(n, keep, h) {
     var start = 0;
@@ -552,7 +562,7 @@
       var p = prs[i];
       var on = S.focus === "branches" && i === S.prCursor;
       out += "<div>" + (on ? " " + cur("> ") : "   ") +
-        yl("#" + p.num) + "  " + gp("@" + p.author) + "  " + esc(p.title) +
+        yl("#" + p.num) + "  " + ghUser(p.author) + "  " + esc(p.title) +
         (p.draft ? d(" [draft]") : "") + d("  " + p.repo) + "</div>";
     }
     return out;
