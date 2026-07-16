@@ -94,10 +94,17 @@ hint and the top-bar/footer GitHub bits are omitted.
 
 ```yaml
 max_depth: 3
-open_cmd: code
+open_cmd: code          # `o` runs this in the repo: code | cursor | code -r | code .
 theme: default          # default | serika_dark | dracula | nord | catppuccin | 8008
 status_glyphs: unicode  # or "ascii"
 ```
+
+`open_cmd` is the editor command as you'd type it in the repo — manygit adds the
+folder itself (a trailing `.` is fine). If it can't open, `o` now says why
+(e.g. `code` not on PATH). Over SSH, `code`/`cursor` can only reach your editor
+through its Remote-SSH server: manygit finds that server's socket automatically,
+so `o` works from a plain terminal too **as long as an editor window is connected
+to the machine** — otherwise there's nothing to open into.
 
 manygit never writes to the folder you launch from, and never force-pushes,
 merges, or rebases. The only destructive action is discarding a repo's changes

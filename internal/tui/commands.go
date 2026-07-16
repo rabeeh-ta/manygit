@@ -6,8 +6,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -162,9 +165,17 @@ const openWait = 3 * time.Second
 // command still running after openWait is treated as launched and left running.
 func openRepoCmd(openCmd, path string) tea.Cmd {
 	return func() tea.Msg {
+		prog, args, ok := openArgs(openCmd, path)
+		if !ok {
+			return openDoneMsg{path: path, err: errors.New("no editor command set (see ? settings)")}
+		}
 		var out bytes.Buffer
-		cmd := exec.Command(openCmd, path)
+		cmd := exec.Command(prog, args...)
+		cmd.Dir = path // run it in the repo, exactly like typing it there
 		cmd.Stdout, cmd.Stderr = &out, &out
+		if env := editorSocketEnv(); env != "" {
+			cmd.Env = append(os.Environ(), env) // let a plain SSH shell reach the editor
+		}
 		if err := cmd.Start(); err != nil {
 			return openDoneMsg{path: path, err: err} // e.g. executable not found
 		}
@@ -190,6 +201,93 @@ func openRepoCmd(openCmd, path string) tea.Cmd {
 			return openDoneMsg{path: path}
 		}
 	}
+}
+
+// openArgs turns the configured open command into an argv for the repo at path.
+// The command is the editor invocation as you'd type it in the repo — "code",
+// "cursor", "code -r", or "code ." — and manygit supplies the folder itself.
+//
+// A value that already names a real program is used verbatim, so an absolute path
+// with spaces ("/Applications/Visual Studio Code.app/…/bin/code") still works.
+// Otherwise it's split into words: first is the program, the rest are flags, and a
+// trailing "." is dropped — it means "this folder", which is exactly the path we
+// append. ok=false when nothing is configured.
+func openArgs(openCmd, path string) (prog string, args []string, ok bool) {
+	if strings.TrimSpace(openCmd) == "" {
+		return "", nil, false
+	}
+	if _, err := exec.LookPath(openCmd); err == nil {
+		return openCmd, []string{path}, true // a real program, spaces and all
+	}
+	f := strings.Fields(openCmd)
+	if len(f) == 0 {
+		return "", nil, false
+	}
+	prog, args = f[0], f[1:]
+	if len(args) > 0 && args[len(args)-1] == "." {
+		args = args[:len(args)-1] // "." is the folder we're already appending
+	}
+	return prog, append(args, path), true
+}
+
+// editorSocketEnv returns a "VSCODE_IPC_HOOK_CLI=<socket>" assignment pointing at
+// a live editor IPC socket, or "" when there's nothing to do.
+//
+// Why: the VS Code / Cursor remote CLI can only reach your editor through the
+// Remote-SSH server's IPC socket, and the editor injects that socket's path as
+// VSCODE_IPC_HOOK_CLI into ITS OWN integrated terminals only. Run manygit from a
+// plain SSH shell (iTerm, Terminal) and the variable is absent, so `code <dir>`
+// just prints "Command is only available … inside a Visual Studio Code terminal"
+// (and still exits 0). The socket itself is reachable from any shell on the box,
+// so we find a live one and hand it to the child ourselves.
+//
+// Returns "" when already inside an editor terminal (nothing to fix) or when no
+// live socket exists (no editor window is connected — then nothing could open it
+// anyway, and openRepoCmd surfaces the editor's own message).
+func editorSocketEnv() string {
+	if os.Getenv("VSCODE_IPC_HOOK_CLI") != "" {
+		return "" // already in an editor terminal — leave the inherited env alone
+	}
+	if s := liveEditorSocket(); s != "" {
+		return "VSCODE_IPC_HOOK_CLI=" + s
+	}
+	return ""
+}
+
+// liveEditorSocket returns the newest editor IPC socket that still accepts a
+// connection, or "". Sockets from closed windows linger on disk but refuse
+// connections, so a dial is what separates a live window from a dead one.
+func liveEditorSocket() string {
+	dir := os.Getenv("XDG_RUNTIME_DIR")
+	if dir == "" {
+		dir = os.TempDir() // macOS and others don't set XDG_RUNTIME_DIR
+	}
+	var socks []string
+	// Cursor is a VS Code fork and uses the same hook variable; glob both names.
+	for _, pat := range []string{"vscode-ipc-*.sock", "cursor-ipc-*.sock"} {
+		if m, err := filepath.Glob(filepath.Join(dir, pat)); err == nil {
+			socks = append(socks, m...)
+		}
+	}
+	// Newest first: the most recently opened window is the likeliest target.
+	sort.Slice(socks, func(i, j int) bool { return sockModTime(socks[i]).After(sockModTime(socks[j])) })
+	for _, s := range socks {
+		c, err := net.DialTimeout("unix", s, 200*time.Millisecond)
+		if err != nil {
+			continue // stale: the window that owned it is gone
+		}
+		_ = c.Close()
+		return s
+	}
+	return ""
+}
+
+func sockModTime(p string) time.Time {
+	fi, err := os.Stat(p)
+	if err != nil {
+		return time.Time{}
+	}
+	return fi.ModTime()
 }
 
 // openErr prefers the editor's own first line of output (the useful message, e.g.

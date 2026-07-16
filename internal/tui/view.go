@@ -741,7 +741,7 @@ func (m Model) settingsBody() string {
 		case skGlyph:
 			return styleGroup.Render("Ahead / behind glyphs")
 		default:
-			return styleGroup.Render("Editor") + styleDim.Render("   (opens a repo with `o`)")
+			return styleGroup.Render("Editor") + styleDim.Render("   (`o` opens the repo — e.g. code, cursor, code -r)")
 		}
 	}
 

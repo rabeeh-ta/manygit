@@ -3,10 +3,12 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1531,5 +1533,86 @@ func TestTUI_OpenSurfacesError(t *testing.T) {
 	}
 	if od := openRepoCmd(warn, t.TempDir())().(openDoneMsg); od.err == nil || !strings.Contains(od.err.Error(), "Visual Studio Code terminal") {
 		t.Errorf("output-on-success should surface as an error, got %v", od.err)
+	}
+}
+
+// A plain SSH shell (iTerm/Terminal) has no VSCODE_IPC_HOOK_CLI, so the editor CLI
+// can't reach the editor. liveEditorSocket finds a live socket itself — skipping
+// stale ones left behind by closed windows, even when a stale one is NEWEST.
+func TestEditorSocketDiscovery(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", dir)
+	t.Setenv("VSCODE_IPC_HOOK_CLI", "") // simulate a plain SSH shell
+
+	// no sockets at all -> nothing to inject
+	if got := editorSocketEnv(); got != "" {
+		t.Errorf("with no sockets editorSocketEnv should be empty, got %q", got)
+	}
+
+	// a LIVE socket (real listener), created first so it is the OLDER one
+	live := filepath.Join(dir, "vscode-ipc-live.sock")
+	ln, err := net.Listen("unix", live)
+	if err != nil {
+		t.Skipf("cannot create a unix socket here: %v", err)
+	}
+	defer ln.Close()
+
+	// a STALE socket file, created last so it sorts NEWEST and is tried first
+	time.Sleep(10 * time.Millisecond)
+	stale := filepath.Join(dir, "vscode-ipc-stale.sock")
+	if err := os.WriteFile(stale, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := liveEditorSocket(); got != live {
+		t.Errorf("should skip the newest STALE socket and pick the live one\n got  %q\n want %q", got, live)
+	}
+	if got, want := editorSocketEnv(), "VSCODE_IPC_HOOK_CLI="+live; got != want {
+		t.Errorf("editorSocketEnv = %q, want %q", got, want)
+	}
+
+	// inside an editor terminal the var is already set -> leave the env alone
+	t.Setenv("VSCODE_IPC_HOOK_CLI", "/already/set.sock")
+	if got := editorSocketEnv(); got != "" {
+		t.Errorf("with the hook already set editorSocketEnv should be empty, got %q", got)
+	}
+}
+
+// The open command is whatever you'd type in the repo: "code", "code .",
+// "cursor .", "code -r" — manygit supplies the folder. A real program path (even
+// with spaces) is used verbatim rather than split.
+func TestOpenArgs(t *testing.T) {
+	// a real program whose path contains a space must NOT be word-split
+	dir := filepath.Join(t.TempDir(), "my editor")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(dir, "ed")
+	if err := os.WriteFile(real, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if p, a, ok := openArgs(real, "/repo"); !ok || p != real || !slices.Equal(a, []string{"/repo"}) {
+		t.Errorf("a real program path with spaces should be verbatim, got (%q, %v, %v)", p, a, ok)
+	}
+
+	for _, c := range []struct {
+		in       string
+		wantProg string
+		wantArgs []string
+		wantOK   bool
+	}{
+		{"code", "code", []string{"/repo"}, true},
+		{"code .", "code", []string{"/repo"}, true}, // the classic "code ." case
+		{"cursor .", "cursor", []string{"/repo"}, true},
+		{"code -r", "code", []string{"-r", "/repo"}, true}, // flags preserved
+		{"code -r .", "code", []string{"-r", "/repo"}, true},
+		{"  code  ", "code", []string{"/repo"}, true},
+		{"", "", nil, false},
+		{"   ", "", nil, false},
+	} {
+		p, a, ok := openArgs(c.in, "/repo")
+		if ok != c.wantOK || p != c.wantProg || !slices.Equal(a, c.wantArgs) {
+			t.Errorf("openArgs(%q) = (%q, %v, %v), want (%q, %v, %v)", c.in, p, a, ok, c.wantProg, c.wantArgs, c.wantOK)
+		}
 	}
 }
