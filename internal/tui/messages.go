@@ -37,6 +37,15 @@ type discardDoneMsg struct {
 	err  error
 }
 
+// openDoneMsg is the result of launching the editor on a repo (o). err is set
+// when the command couldn't be started (e.g. not found) or exited non-zero
+// quickly (e.g. VS Code's "only available inside a VS Code terminal"); nil when
+// it launched cleanly or is still running.
+type openDoneMsg struct {
+	path string
+	err  error
+}
+
 type latestTagMsg struct {
 	path string
 	tag  string

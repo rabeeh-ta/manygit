@@ -2,10 +2,13 @@ package tui
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -145,6 +148,61 @@ func checkoutCmd(sem chan struct{}, path, branch string) tea.Cmd {
 	return gated(sem, func() tea.Msg {
 		return checkoutDoneMsg{path: path, branch: branch, err: git.Checkout(path, branch)}
 	})
+}
+
+// openWait bounds how long openRepoCmd watches the editor for an IMMEDIATE
+// failure. A command still running after it is assumed to have launched (GUI
+// editors stay up) and is left alone — never killed.
+const openWait = 3 * time.Second
+
+// openRepoCmd launches the editor command (cfg.OpenCmd) on path and reports a
+// quick failure instead of failing silently: a command that can't start (e.g.
+// not found) or exits non-zero within openWait — like VS Code's "Command is only
+// available … inside a Visual Studio Code terminal" when run over plain SSH. A
+// command still running after openWait is treated as launched and left running.
+func openRepoCmd(openCmd, path string) tea.Cmd {
+	return func() tea.Msg {
+		var out bytes.Buffer
+		cmd := exec.Command(openCmd, path)
+		cmd.Stdout, cmd.Stderr = &out, &out
+		if err := cmd.Start(); err != nil {
+			return openDoneMsg{path: path, err: err} // e.g. executable not found
+		}
+		done := make(chan error, 1) // buffered so the goroutine never leaks
+		go func() { done <- cmd.Wait() }()
+		select {
+		case err := <-done:
+			// Exited within the window. These editor CLIs are SILENT on success,
+			// so any output means trouble — even on a 0 exit: VS Code prints
+			// "Command is only available … inside a VS Code terminal" and still
+			// exits 0 over plain SSH. Reading out here is race-free (Wait finished
+			// the output copy before sending on done).
+			if s := strings.TrimSpace(out.String()); s != "" {
+				return openDoneMsg{path: path, err: openErr(err, s)}
+			}
+			if err != nil {
+				return openDoneMsg{path: path, err: err}
+			}
+			return openDoneMsg{path: path}
+		case <-time.After(openWait):
+			// Still running and silent: a GUI editor that stays attached. Leave it
+			// running; don't read out here (the copy goroutine may still write).
+			return openDoneMsg{path: path}
+		}
+	}
+}
+
+// openErr prefers the editor's own first line of output (the useful message, e.g.
+// "Command is only available …") over the bare exit-status error.
+func openErr(err error, out string) error {
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return err
+	}
+	if i := strings.IndexByte(out, '\n'); i >= 0 {
+		out = strings.TrimSpace(out[:i])
+	}
+	return errors.New(out)
 }
 
 // ghProbeCmd resolves gh availability once at startup: gh on PATH AND

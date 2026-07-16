@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -108,6 +107,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, exp // nothing changed; no need to re-stat the repo
 		}
 		return m, tea.Batch(exp, statusCmd(msg.path))
+	case openDoneMsg:
+		if msg.err != nil {
+			return m, m.setStatus(styleRed.Render("open " + baseName(msg.path) + " failed: " + msg.err.Error()))
+		}
+		return m, nil
 	case discardDoneMsg:
 		name := baseName(msg.path)
 		if msg.err != nil {
@@ -532,11 +536,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "o":
 		if r := m.currentVisible(vis); r != nil {
-			path, openCmd := r.repo.Path, m.cfg.OpenCmd
-			return m, func() tea.Msg {
-				_ = exec.Command(openCmd, path).Start() // detached; ignore result
-				return nil
-			}
+			return m, openRepoCmd(m.cfg.OpenCmd, r.repo.Path)
 		}
 	case "F":
 		// Toggle the "needs attention" view: only repos with changes / ahead / behind.

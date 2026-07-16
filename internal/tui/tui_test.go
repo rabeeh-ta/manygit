@@ -1498,3 +1498,38 @@ func TestTUI_GhProbeAndPrsMsg(t *testing.T) {
 		t.Error("an unavailable probe should not load PRs")
 	}
 }
+
+// `o` now surfaces a failure (missing command / editor CLI refusing) as a status
+// line instead of failing silently; a command that launches leaves no error.
+func TestTUI_OpenSurfacesError(t *testing.T) {
+	// a command that can't start -> error carried back...
+	msg := openRepoCmd("definitely-not-a-real-editor-xyz-123", t.TempDir())()
+	od, ok := msg.(openDoneMsg)
+	if !ok || od.err == nil {
+		t.Fatalf("a missing editor command should return an error, got %#v", msg)
+	}
+	// ...and the handler renders it into the status line.
+	var m Model
+	mm, _ := m.Update(od)
+	if s := stripANSI(mm.(Model).statusLine); !strings.Contains(s, "open") || !strings.Contains(s, "failed") {
+		t.Errorf("open error should show in the status line, got %q", s)
+	}
+
+	// a command that exits 0 with NO output is treated as launched -> no error.
+	if od := openRepoCmd("true", t.TempDir())().(openDoneMsg); od.err != nil {
+		t.Errorf("a clean silent launch should carry no error, got %v", od.err)
+	}
+	// a command that exits non-zero surfaces an error.
+	if od := openRepoCmd("false", t.TempDir())().(openDoneMsg); od.err == nil {
+		t.Error("a non-zero exit should surface an error")
+	}
+	// the key case: an editor CLI that prints a message but still exits 0 (VS Code
+	// over plain SSH) must surface that message as an error.
+	warn := filepath.Join(t.TempDir(), "warn.sh")
+	if err := os.WriteFile(warn, []byte("#!/bin/sh\necho 'only available inside a Visual Studio Code terminal'\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if od := openRepoCmd(warn, t.TempDir())().(openDoneMsg); od.err == nil || !strings.Contains(od.err.Error(), "Visual Studio Code terminal") {
+		t.Errorf("output-on-success should surface as an error, got %v", od.err)
+	}
+}
