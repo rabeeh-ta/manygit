@@ -178,7 +178,23 @@ func clampLines(s string, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
-// visibleRepos returns repos matching the active filters: the name filter (`/`)
+// repoHaystack is the text `/` matches a repo row against: what the row shows —
+// its name and current branch, plus the latest tag while `t` has tags inline.
+// It matches the full values rather than the width-truncated ones renderRow
+// draws, so results never depend on how wide the terminal happens to be.
+//
+// The group header and the dirty/sync cells are deliberately left out: `F`
+// already filters on attention state, and folding it into `/` would give "ok"
+// two meanings.
+func (m Model) repoHaystack(r *repoVM) string {
+	s := r.repo.Name + " " + currentBranch(r.status)
+	if m.showTagsInline {
+		s += " " + r.latestTag
+	}
+	return strings.ToLower(s)
+}
+
+// visibleRepos returns repos matching the active filters: the row filter (`/`)
 // and/or the "needs attention" filter (`F`). Both compose (AND).
 func (m Model) visibleRepos() []*repoVM {
 	needle := ""
@@ -190,7 +206,7 @@ func (m Model) visibleRepos() []*repoVM {
 	}
 	var out []*repoVM
 	for _, r := range m.repos {
-		if needle != "" && !strings.Contains(strings.ToLower(r.repo.Name), needle) {
+		if needle != "" && !strings.Contains(m.repoHaystack(r), needle) {
 			continue
 		}
 		if m.filterAttention && !needsAttention(r) {

@@ -393,10 +393,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "t":
 		// Toggle each repo's latest tag inline in the Repos rows (after the
 		// branch). Off by default; loading the tags happens when switched on.
-		m.showTagsInline = !m.showTagsInline
-		if m.showTagsInline {
-			return m, m.loadTagsCmd()
+		// The tag is part of what `/` matches, so with a repo filter active this
+		// resizes the visible list under the cursor — pin it to its repo first.
+		cur := ""
+		if r := m.currentVisible(vis); r != nil {
+			cur = r.repo.Path
 		}
+		m.showTagsInline = !m.showTagsInline
+		var cmds []tea.Cmd
+		if m.showTagsInline {
+			cmds = append(cmds, m.loadTagsCmd())
+		}
+		if m.filter != "" && m.filterPanel == panelRepos {
+			cmds = append(cmds, m.keepCursorOn(cur))
+		}
+		return m, tea.Batch(cmds...)
 	case "1":
 		m.focus = panelRepos
 	case "2":
@@ -888,6 +899,30 @@ func (m *Model) checkoutPR() tea.Cmd {
 		m.setStatus(styleDim.Render("checking out PR #"+num+" in "+baseName(r.repo.Path)+"...")),
 		ghCheckoutCmd(m.sem, r.repo.Path, pr.Number),
 	)
+}
+
+// keepCursorOn re-points the cursor at the repo at path within the current
+// visible set, or clamps to the top when it's no longer there. Unlike
+// focusRepoByPath it preserves the active filter — it exists for changes that
+// reshuffle the filtered list rather than escape it.
+//
+// It reloads the context panes only when the cursor actually ends up on a
+// different repo. Reloading regardless would be worse than wasteful: the
+// graph/changes replies reset graphSel, graphOffset and changeShowDiff, so a
+// reshuffle that moved nothing would still collapse an open diff and scroll the
+// graph back to the top.
+func (m *Model) keepCursorOn(path string) tea.Cmd {
+	m.cursor = 0
+	for i, r := range m.visibleRepos() {
+		if r.repo.Path == path {
+			m.cursor = i
+			break
+		}
+	}
+	if r := m.currentVisible(m.visibleRepos()); r != nil && r.repo.Path == path {
+		return nil // same repo still under the cursor — nothing to reload
+	}
+	return m.loadContextCmd()
 }
 
 // focusRepoByPath moves the repo cursor to the repo at path and focuses its

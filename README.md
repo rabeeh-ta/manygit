@@ -55,7 +55,7 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `n` | full-screen news feed — all headlines at once (AI-summarized, cached ~4h) |
 | `t` | toggle each repo's latest tag inline, after the branch (off by default) |
 | `F` | show only repos with changes / ahead / behind |
-| `/` | filter the focused list by name — repos, scripts, or branches (type `feat` to find a remote branch among hundreds) |
+| `/` | filter the focused list by what it shows — repos match on name **and** current branch (`/master` finds every repo on master, and the tag too while `t` is on); branches match on name (type `feat` to find a remote branch among hundreds); scripts on name |
 | `o` | open the repo in your editor |
 | `z` | zoom the focused pane |
 | `?` | settings & help (themes, AI harness, glyphs, editor) |
