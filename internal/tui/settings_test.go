@@ -403,3 +403,148 @@ func TestTUI_ScanDepthKeepsLoadedRepos(t *testing.T) {
 		t.Error("a surviving repo lost its loaded status across a rescan")
 	}
 }
+
+// tab cycles panels forward and wraps; shift+tab must cycle back and wrap the
+// other way. Go's % keeps the sign of the dividend, so a naive focus-1 at the
+// first panel would land on -1 rather than the last.
+func TestTUI_ShiftTabCyclesBackwards(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
+	if m.focus != panelRepos {
+		t.Fatalf("focus starts at %v, want panelRepos", m.focus)
+	}
+
+	// shift+tab from the first panel wraps to the last
+	back := func(m Model) Model {
+		mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+		return mm.(Model)
+	}
+	want := []panel{panelBottom, panelBranches, panelScripts, panelRepos}
+	for i, w := range want {
+		m = back(m)
+		if m.focus != w {
+			t.Fatalf("shift+tab #%d: focus = %v, want %v", i+1, m.focus, w)
+		}
+	}
+
+	// and it is the exact inverse of tab
+	fwd, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	rev, _ := fwd.(Model).Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if rev.(Model).focus != panelRepos {
+		t.Errorf("tab then shift+tab = %v, want to land back on panelRepos", rev.(Model).focus)
+	}
+}
+
+// lipgloss's Width HARD-WRAPS rather than overflowing, so a key wider than the
+// column silently breaks across two lines mid-word. Every key label in the
+// reference must fit, or the ? -> tab screen renders garbage like "left/rig\nht".
+func TestTUI_KeyColumnFitsEveryLabel(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = mm.(Model)
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // flip to the keybindings page
+	body := stripANSI(mm.(Model).View())
+
+	for _, key := range []string{"left/right", "no-remote", "shift+tab", "b/enter", "5 enter"} {
+		if !strings.Contains(body, key) {
+			t.Errorf("key %q is wrapped or missing from the reference — Width() hard-wraps", key)
+		}
+	}
+}
+
+// esc must back out of one layer of state per press — and crucially it must
+// clear a committed filter, which previously took `/` then esc (two keys to undo
+// one, because `/` resets the needle on the way in).
+func TestTUI_EscClearsCommittedFilter(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
+	all := len(m.visibleRepos())
+	if all != 2 {
+		t.Fatalf("fixture: %d repos, want 2", all)
+	}
+
+	// / a l p h a <enter>  -> committed filter, list narrowed
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = mm.(Model)
+	for _, r := range "alpha" {
+		mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = mm.(Model)
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm.(Model)
+	if m.filtering {
+		t.Fatal("enter should commit the filter, not keep typing")
+	}
+	if len(m.visibleRepos()) != 1 {
+		t.Fatalf("filter /alpha left %d repos visible, want 1", len(m.visibleRepos()))
+	}
+
+	// esc alone must clear it
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = mm.(Model)
+	if m.filter != "" {
+		t.Errorf("filter = %q after esc, want cleared", m.filter)
+	}
+	if len(m.visibleRepos()) != all {
+		t.Errorf("%d repos visible after esc, want all %d back", len(m.visibleRepos()), all)
+	}
+	// and it should keep you on the repo you filtered your way to
+	if r := m.currentVisible(m.visibleRepos()); r == nil || r.repo.Name != "alpha" {
+		got := "(none)"
+		if r != nil {
+			got = r.repo.Name
+		}
+		t.Errorf("cursor landed on %s after clearing the filter, want alpha", got)
+	}
+}
+
+// F is a filter too, so esc must lift it.
+func TestTUI_EscClearsAttentionFilter(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("F")})
+	m = mm.(Model)
+	if !m.filterAttention {
+		t.Fatal("F should turn the attention filter on")
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if mm.(Model).filterAttention {
+		t.Error("esc should lift the attention filter")
+	}
+}
+
+// One layer per press, innermost first: diff -> Changes -> zoom -> filter.
+// Peeling more than one at a time would yank the user further than they meant.
+func TestTUI_EscPeelsOneLayerAtATime(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
+	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+	esc := func(m Model) Model { mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc}); return mm.(Model) }
+
+	// stack up: filter, zoom, Changes, diff
+	for _, k := range []string{"/", "a", "l"} {
+		mm, _ := m.Update(rk(k))
+		m = mm.(Model)
+	}
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // commit
+	m = mm.(Model)
+	mm, _ = m.Update(rk("6")) // Changes
+	m = mm.(Model)
+	mm, _ = m.Update(rk("z")) // zoom
+	m = mm.(Model)
+	m.changeShowDiff = true // as if a diff were open
+
+	if m = esc(m); !m.zoomed || m.bottomView != bvChanges || m.changeShowDiff {
+		t.Fatalf("esc #1 should close only the diff; zoomed=%v view=%v diff=%v", m.zoomed, m.bottomView, m.changeShowDiff)
+	}
+	if m = esc(m); !m.zoomed || m.bottomView != bvGraph {
+		t.Fatalf("esc #2 should leave only Changes; zoomed=%v view=%v", m.zoomed, m.bottomView)
+	}
+	if m = esc(m); m.zoomed || m.filter == "" {
+		t.Fatalf("esc #3 should unzoom only; zoomed=%v filter=%q", m.zoomed, m.filter)
+	}
+	if m = esc(m); m.filter != "" {
+		t.Fatalf("esc #4 should clear the filter; filter=%q", m.filter)
+	}
+}

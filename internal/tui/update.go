@@ -493,6 +493,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.bottomView = bvOutput
 	case "tab":
 		m.focus = (m.focus + 1) % panelCount
+	case "shift+tab":
+		// + panelCount before the modulo: Go's % keeps the sign of the dividend,
+		// so focus 0 - 1 would be -1, not the last panel.
+		m.focus = (m.focus - 1 + panelCount) % panelCount
 	case "right":
 		// →/← hop between the two panels you actually browse together: Repos and
 		// the highlighted repo's Branches. Deliberately scoped to those two — from
@@ -595,13 +599,43 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.prCursor = 0
 		}
 	case "esc":
-		// Back-navigate the bottom slot: diff → file list → graph.
-		if m.focus == panelBottom && m.bottomView == bvChanges {
-			if m.changeShowDiff {
-				m.changeShowDiff = false
-			} else {
-				m.bottomView = bvGraph
+		// esc backs out of exactly ONE layer of state per press, innermost first,
+		// so it never yanks you further than you meant. Without this a committed
+		// filter could only be cleared by pressing `/` (which resets the needle)
+		// and then esc — two keys to undo one.
+		//
+		// Order is the visual nesting: the diff sits inside Changes, Changes
+		// inside the zoomed pane, and the filters are the outermost thing shaping
+		// what you're looking at. The filters clear last because they're the state
+		// you're most likely to still want.
+		switch {
+		case m.focus == panelBottom && m.bottomView == bvChanges && m.changeShowDiff:
+			m.changeShowDiff = false
+		case m.focus == panelBottom && m.bottomView == bvChanges:
+			m.bottomView = bvGraph
+		case m.zoomed:
+			m.zoomed = false
+		case m.filter != "":
+			// Land back on the repo you filtered your way to, rather than snapping
+			// to the top of the widened list — keepCursorOn also skips the context
+			// reload when the cursor didn't actually move.
+			cur := ""
+			if r := m.currentVisible(vis); r != nil {
+				cur = r.repo.Path
 			}
+			m.filter = ""
+			m.filterPanel = panelRepos
+			m.branchCursor = 0
+			m.prCursor = 0
+			m.scriptCursor = 0
+			return m, m.keepCursorOn(cur)
+		case m.filterAttention:
+			cur := ""
+			if r := m.currentVisible(vis); r != nil {
+				cur = r.repo.Path
+			}
+			m.filterAttention = false
+			return m, m.keepCursorOn(cur)
 		}
 	case "o":
 		if r := m.currentVisible(vis); r != nil {

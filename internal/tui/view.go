@@ -859,7 +859,12 @@ func (m Model) settingsBody() string {
 // it fits shorter terminals).
 func (m Model) keysBody() string {
 	kr := func(key, desc string) string {
-		return "  " + lipgloss.NewStyle().Width(8).Render(key) + styleDim.Render(desc)
+		// Width(10), not 8: lipgloss's Width HARD-WRAPS rather than overflowing, so
+		// any key wider than the column breaks across two lines mid-word. The
+		// longest keys here are exactly 10 cells (left/right) and 9 (no-remote,
+		// shift+tab). At the documented 80-col minimum this leaves the description
+		// 24 cells, which MaxWidth clips cleanly.
+		return "  " + lipgloss.NewStyle().Width(10).Render(key) + styleDim.Render(desc)
 	}
 	up, down := "+", "-"
 	if m.cfg.UnicodeGlyphs() {
@@ -875,6 +880,7 @@ func (m Model) keysBody() string {
 		kr("4", "PRs (beside Branches)"),
 		kr("5/6/7", "bottom: Graph / Changes / Output"),
 		kr("tab", "cycle panels"),
+		kr("shift+tab", "cycle panels backwards"),
 		kr("z", "zoom the focused pane full-screen"),
 		kr("j/k", "move in the focused panel"),
 		kr("left/right", "hop between Repos and Branches"),
@@ -884,6 +890,7 @@ func (m Model) keysBody() string {
 		kr("t", "toggle each repo's latest tag inline"),
 		kr("F", "only changed / unsynced repos"),
 		kr("/", "filter the focused list"),
+		kr("esc", "back out one layer of state"),
 		"",
 		styleGroup.Render("GitHub PRs (4)") + styleDim.Render("   (needs gh)"),
 		kr("m", "toggle mine / review-requested"),

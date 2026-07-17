@@ -55,9 +55,19 @@ Ported functions keep their Go names on purpose — grep the name in both files.
   `:root[data-theme=…]` block and a `:root[data-mode="light"][data-theme=…]` one
   — theme.go's accents are tuned for a dark terminal and none of them pass on
   paper unmodified. Darken hue-preserving and **measure**; don't eyeball.
-- **The demo intentionally diverges in exactly two places**, both because it runs
-  in a browser: `q` and `o` explain themselves instead of quitting / spawning an
-  editor. Keep those, and keep them honest.
+- **The demo intentionally diverges in exactly three places**, all because it runs
+  in a browser:
+  1. `q` explains itself instead of quitting.
+  2. `o` explains itself instead of spawning an editor.
+  3. **`esc` releases the keyboard when it has nothing else to do.** The widget
+     swallows `tab` *and* `shift+tab` (both cycle panes), so without an exit a
+     keyboard user is trapped — WCAG 2.1.2. `esc` keeps its real meaning inside
+     the Changes pane and any overlay/filter/confirm; only the otherwise-inert
+     case is spent on blurring. If you rebind `esc` in the Go, find the demo a new
+     exit **and say so in the `aria-label` and the visible cue** — an undisclosed
+     escape hatch is the same as none.
+
+  Keep all three, and keep them honest.
 - **`runInit()` is a port of `Init()`, not an animation.** First focus replays the
   real launch: every repo unloaded and immediately fetching, so a row goes
   `.` → `~` → its glyph as the local status read lands and then the fetch returns;
@@ -100,16 +110,18 @@ tag — nothing in the code needs editing.
 git tag v1.0.7 && git push origin v1.0.7
 ```
 
-## Known bug (unfixed)
+## Gotcha: lipgloss `Width` hard-wraps
 
-`view.go`'s `keysBody` pads its key column with `lipgloss.NewStyle().Width(8)`,
-but lipgloss's `Width` **hard-wraps** rather than overflows, and two keys exceed
-8 cells — `left/right` (10) and `no-remote` (9). Both rows break mid-word in the
-real `?` → `tab` screen:
+`lipgloss.NewStyle().Width(n)` does **not** pad-or-overflow — it hard-wraps
+anything wider than `n`, mid-word. `keysBody` hit this with `Width(8)` while
+`left/right` (10), `no-remote` (9) and `shift+tab` (9) all exceeded it, rendering
+the `?` → `tab` screen as:
 
 ```
   left/rig
 ht      hop between Repos and Branches
 ```
 
-`Width(10)` fixes it. The browser port already renders it at the intended width.
+It's `Width(10)` now, and `TestTUI_KeyColumnFitsEveryLabel` fails if a label ever
+outgrows the column again. Keep that in mind anywhere a fixed-width cell holds
+caller-supplied text.

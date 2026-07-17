@@ -158,7 +158,7 @@
               >A working copy of the interface, running here. The git is fake — the keys are the
               real keys.</span
             >
-            <span class="chip demo__cue--key">click to start it, then type · shift+tab leaves</span>
+            <span class="chip demo__cue--key">click to start it, then type · esc leaves</span>
             <span class="chip demo__cue--tap">swipe it · tap the keys below</span>
           </div>
 
@@ -168,7 +168,7 @@
               id="term"
               tabindex="0"
               role="application"
-              aria-label="manygit interactive demo. It captures the keyboard, including Tab, which cycles its panes: press Shift+Tab to leave it. Every control is also available as an ordinary button below, and the full key reference is in the Keys section."
+              aria-label="manygit interactive demo. It captures the keyboard, including Tab and Shift+Tab, which cycle its panes: press Escape to leave it. Every control is also available as an ordinary button below, and the full key reference is in the Keys section."
             >
               <div class="term__veil" aria-hidden="true">
                 <span class="demo__cue--key">click to start it</span>
@@ -303,6 +303,10 @@
                   <td>The bottom slot: commit graph, changed files, script output</td>
                 </tr>
                 <tr>
+                  <td class="kt__k"><b>tab</b></td>
+                  <td>Cycle the panes. <b>shift+tab</b> cycles back</td>
+                </tr>
+                <tr>
                   <td class="kt__k"><b>j k</b></td>
                   <td>Move within the focused pane</td>
                 </tr>
@@ -351,6 +355,13 @@
                 <tr>
                   <td class="kt__k"><b>g</b> / <b>n</b></td>
                   <td>Full-screen commit graph / full-screen news feed</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>esc</b></td>
+                  <td>
+                    Back out one layer of state — the diff, then Changes, then zoom, then the
+                    <b>/</b> and <b>F</b> filters. One press, one layer
+                  </td>
                 </tr>
                 <tr>
                   <td class="kt__k"><b>o</b> / <b>z</b></td>

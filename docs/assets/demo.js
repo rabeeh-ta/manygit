@@ -1331,7 +1331,14 @@
       case "7": S.focus = "bottom"; clearPRFilter(); S.bottomView = "output"; break;
       case "Tab": {
         var order = ["repos", "scripts", "branches", "bottom"];
-        S.focus = order[(order.indexOf(S.focus) + 1) % order.length]; break;
+        var at = order.indexOf(S.focus);
+        // Go: `case "tab"` forward, `case "shift+tab"` back. The + order.length
+        // keeps the modulo positive when wrapping past the first panel — the same
+        // reason the Go writes (m.focus - 1 + panelCount) % panelCount.
+        S.focus = shiftTab
+          ? order[(at - 1 + order.length) % order.length]
+          : order[(at + 1) % order.length];
+        break;
       }
       case "ArrowRight":
         if (S.focus === "repos") { S.focus = "branches"; S.topView = "branches"; S.branchCursor = 0; }
@@ -1379,12 +1386,34 @@
       case "m":
         if (S.focus === "branches" && S.topView === "prs") { S.prShowReview = !S.prShowReview; S.prCursor = 0; }
         break;
-      case "Escape":
-        if (S.focus === "bottom" && S.bottomView === "changes") {
-          if (S.changeShowDiff) S.changeShowDiff = false;
-          else S.bottomView = "graph";
+      case "Escape": {
+        // esc backs out of exactly ONE layer per press, innermost first, so it
+        // never yanks you further than you meant. Order is the visual nesting:
+        // the diff sits inside Changes, Changes inside the zoomed pane, and the
+        // filters are the outermost thing shaping what you're looking at.
+        var escRepo = curRepo();
+        var escPath = escRepo ? escRepo.path : "";
+        if (S.focus === "bottom" && S.bottomView === "changes" && S.changeShowDiff) {
+          S.changeShowDiff = false;
+        } else if (S.focus === "bottom" && S.bottomView === "changes") {
+          S.bottomView = "graph";
+        } else if (S.zoomed) {
+          S.zoomed = false;
+        } else if (S.filter) {
+          // land back on the repo you filtered your way to, not the top of the
+          // widened list
+          S.filter = "";
+          S.filterPanel = "repos";
+          S.branchCursor = 0;
+          S.prCursor = 0;
+          S.scriptCursor = 0;
+          keepCursorOn(escPath);
+        } else if (S.filterAttention) {
+          S.filterAttention = false;
+          keepCursorOn(escPath);
         }
         break;
+      }
       case "o": {
         var ro = curRepo();
         if (ro) setStatus(d("o runs `" + S.openCmd + " " + ro.path + "` — nothing to open from a browser"));
@@ -1437,15 +1466,42 @@
     Backspace: 1, Escape: 1
   };
 
+  // shiftTab is read by handleKey's Tab case. It is a module-level flag rather
+  // than a parameter so handleKey keeps the single-string signature the keypad
+  // buttons and the tests both call it with.
+  var shiftTab = false;
+
+  // idleEscape reports whether esc has nothing to do in the TUI right now. The
+  // real tool binds esc only to backing out of the Changes pane; everywhere else
+  // it is inert, so the demo spends that inert case on releasing the keyboard.
+  function idleEscape() {
+    if (S.filtering || S.showHelp || S.showGraph || S.showNews || S.confirmDiscard) return false;
+    if (S.focus === "bottom" && S.bottomView === "changes") return false;
+    // esc now peels zoom and the filters too — it may only release the keyboard
+    // once there is genuinely nothing left in the TUI for it to undo.
+    if (S.zoomed || S.filter || S.filterAttention) return false;
+    return true;
+  }
+
   function onKey(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    // Escape hatch. `tab` cycles panes in manygit, so a keyboard user who tabbed
-    // in would otherwise be trapped here forever. shift+tab is unbound in the
-    // real TUI, so spending it on "give the focus back" costs nothing.
-    if (e.key === "Tab" && e.shiftKey) return;
+
+    // THE ESCAPE HATCH. This widget swallows tab AND shift+tab (both cycle panes
+    // in manygit), so without a way out a keyboard user is trapped — WCAG 2.1.2.
+    // esc is the exit, but only when it would otherwise do nothing: inside the
+    // Changes pane, or any overlay/filter/confirm, it keeps its real meaning and
+    // the user can press it again once those are closed.
+    if (e.key === "Escape" && idleEscape()) {
+      e.preventDefault();
+      el.term.blur();
+      return;
+    }
+
+    shiftTab = e.key === "Tab" && e.shiftKey;
     var k = e.key;
     if (SWALLOW[k] || k.length === 1) e.preventDefault();
     handleKey(k);
+    shiftTab = false;
     render();
   }
 

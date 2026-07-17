@@ -51,6 +51,7 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `1` `2` `3` | focus Repos / Scripts / Branches |
 | `4` | PRs — a tab beside Branches (top-right) |
 | `5` `6` `7` | bottom slot: Graph / Changes / Output |
+| `tab` / `shift+tab` | cycle the panes forwards / backwards |
 | `j` `k` | move within the focused panel |
 | `→` `←` | hop between Repos and Branches |
 | `m` | in the PRs tab: toggle *my PRs* ⇄ *review requests* |
@@ -65,6 +66,7 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `/` | filter the focused list by what it shows — repos match on name **and** current branch (`/master` finds every repo on master, and the tag too while `t` is on); branches match on name (type `feat` to find a remote branch among hundreds); scripts on name |
 | `o` | open the repo in your editor |
 | `z` | zoom the focused pane |
+| `esc` | back out one layer of state: the diff, then Changes, then zoom, then the `/` and `F` filters |
 | `?` | settings & help (themes, AI harness, scan depth, glyphs, editor) |
 | `q` | quit |
 
