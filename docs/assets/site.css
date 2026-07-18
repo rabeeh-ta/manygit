@@ -1183,6 +1183,23 @@ a.chip:hover {
   margin: auto; /* scroll-safe centring when a step is taller than the viewport */
 }
 
+/* The masthead's light/dark toggle is hidden with the rest of the site on a
+   phone, so the gate carries its own in the corner — same [ chip ] look, wired
+   by the same controller (demo.js wireMode) off the shared data-mode. Fixed, so
+   it stays put while a long step scrolls; a --bg backing keeps text from tangling
+   under it. Bigger tap target than the desktop chip. */
+.mg-mode {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+  z-index: 2;
+  padding: 11px 12px;
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+}
+
 .mg-brand {
   display: flex;
   align-items: center;

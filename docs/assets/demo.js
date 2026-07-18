@@ -1679,23 +1679,35 @@
   // it inherits your terminal's (theme.go). So this is its own axis from the
   // demo's `?` theme picker, and the two compose. The <head> script has already
   // applied the stored/OS choice before first paint; this only wires the toggle.
+  // One controller for every ground toggle on the page: the masthead chip on
+  // desktop and the mobile gate's own corner toggle (the masthead is hidden on a
+  // phone, and the toggle went with it). They share data-mode + localStorage, so
+  // flipping either — or resizing across the breakpoint — leaves both in step.
+  // The label of each is its own destination ("terminal" vs "background").
   function wireMode() {
-    var btn = document.getElementById("mode");
-    if (!btn) return;
+    var btns = document.querySelectorAll("[data-mode-toggle]");
+    if (!btns.length) return;
     var meta = document.querySelector('meta[name="theme-color"]');
     var root = document.documentElement;
     function paint() {
       var light = root.getAttribute("data-mode") === "light";
-      btn.textContent = light ? "dark" : "light"; // the label is what you'd get
-      btn.setAttribute("aria-label", "Switch to a " + (light ? "dark" : "light") + " terminal");
+      Array.prototype.forEach.call(btns, function (b) {
+        b.textContent = light ? "dark" : "light"; // the label is what you'd get
+        b.setAttribute(
+          "aria-label",
+          "Switch to a " + (light ? "dark" : "light") + " " + (b.getAttribute("data-mode-toggle") || "terminal")
+        );
+      });
       if (meta) meta.setAttribute("content", light ? "#eeede8" : "#0b0b0c");
     }
     paint();
-    btn.addEventListener("click", function () {
-      var next = root.getAttribute("data-mode") === "light" ? "dark" : "light";
-      root.setAttribute("data-mode", next);
-      try { localStorage.setItem("manygit.mode", next); } catch (e) {}
-      paint();
+    Array.prototype.forEach.call(btns, function (b) {
+      b.addEventListener("click", function () {
+        var next = root.getAttribute("data-mode") === "light" ? "dark" : "light";
+        root.setAttribute("data-mode", next);
+        try { localStorage.setItem("manygit.mode", next); } catch (e) {}
+        paint();
+      });
     });
   }
 
