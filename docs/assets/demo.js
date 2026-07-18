@@ -1232,22 +1232,15 @@
     if (S.filterPanel === "branches") { S.filter = ""; S.filterPanel = "repos"; S.branchCursor = 0; }
   }
 
-  // keepCursorOn re-points the cursor at the repo at path within the current
-  // visible set, or clamps to the top when it's no longer there. Unlike
-  // focusRepoByPath it preserves the active filter — it exists for changes that
-  // reshuffle the filtered list rather than escape it.
+  // keepCursorOn re-points the cursor at path in the visible set, or clamps to
+  // the top when it's gone, preserving the filter. Reloads the panes only when
+  // the cursor lands on a different repo (else a moved-nothing reshuffle would
+  // collapse an open diff).
   //
-  // It reloads the context panes only when the cursor actually ends up on a
-  // different repo. Reloading regardless would be worse than wasteful: it resets
-  // graphSel/graphOffset and changeShowDiff, so a reshuffle that moved nothing
-  // would still collapse an open diff and scroll the graph back to the top.
-  // Port of Model.reclampCursor (update.go). The Go funnels every status change
-  // through statusMsg and re-clamps there; the demo mutates the fixture inline,
-  // so each mutating key calls this itself with the path it was on beforehand.
-  // Without it, pushing/syncing/discarding the highlighted repo under `F` (or a
-  // `/needle` that matches on branch) drops its row out from under the cursor:
-  // the cursor either dangles past the end or silently addresses a repo the
-  // panels aren't showing.
+  // Port of Model.reclampCursor (update.go): the Go re-clamps in statusMsg, but
+  // the demo mutates the fixture inline, so each mutating key calls this with the
+  // path it was on. Without it, syncing/discarding the highlighted repo under `F`
+  // or a branch `/needle` drops its row from under the cursor.
   function reclampCursor(was) {
     var vis = visibleRepos();
     if (S.cursor >= vis.length) S.cursor = vis.length - 1;

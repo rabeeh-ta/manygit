@@ -772,10 +772,9 @@ func (m Model) settingsBody() string {
 		}
 	}
 
-	// Two columns, split at skMaxDepth. One column is 26 rows and needs a scroll
-	// at the documented 80x20 minimum; 15 + 11 side by side does not, so the whole
-	// list is visible at every supported size. settingRows() order is unchanged, so
-	// j/k still walks it top-to-bottom, left column then right.
+	// Two columns split at skMaxDepth — one column of 26 rows scrolls at the 80x20
+	// minimum, side-by-side it fits. settingRows() order is unchanged, so j/k still
+	// walks top-to-bottom, left then right.
 	defaultDepth := config.Default().MaxDepth // hoisted: this loop runs every render
 	var left, right []string
 	cursorLine := 0
@@ -859,10 +858,9 @@ func (m Model) settingsBody() string {
 			*col = append(*col, "   "+ecur+eval+styleDim.Render(hint))
 		}
 	}
-	// Window both columns together to the space between the fixed title and
-	// footer. They share start/end because JoinHorizontal aligns them at the top,
-	// so cursorLine indexes the joined block directly. At every supported size the
-	// columns already fit and this is a no-op — it only bites if the list grows.
+	// Window both columns together (they share start/end since JoinHorizontal
+	// aligns them at the top). A no-op at every supported size; only bites if the
+	// list grows.
 	th := m.height
 	if th <= 0 {
 		th = minTermH
@@ -884,8 +882,7 @@ func (m Model) settingsBody() string {
 	start, end := window(n, cursorLine, avail)
 	left, right = left[start:end], right[start:end]
 
-	// Pad the left column to a fixed width so the right one starts at a straight
-	// edge; ANSI-aware, since every row carries colour.
+	// Pad the left column to a fixed width (ANSI-aware) so the right starts straight.
 	const colGap = 4
 	leftW := 0
 	for _, ln := range left {
@@ -901,9 +898,9 @@ func (m Model) settingsBody() string {
 	body := []string{styleTitle.Render("manygit — settings") + styleDim.Render("   (,)"), ""}
 	body = append(body, strings.Split(cols, "\n")...)
 	body = append(body, "", styleDim.Render("j/k move · enter select · tab keys · esc close"))
-	// Left-join first: it pads every line to the block width, so the title and
-	// footer keep a straight left edge with the columns instead of each being
-	// centred on its own by overlayBox's Place.
+	// Left-join first so it pads every line to the block width — the title and
+	// footer then share a straight left edge with the columns instead of overlayBox
+	// centring each on its own.
 	return lipgloss.JoinVertical(lipgloss.Left, body...)
 }
 
@@ -1099,11 +1096,9 @@ func (m Model) changelogView() string {
 	}
 	innerH := th - 2 // rows inside the border
 
-	// Read as a centred column, not edge-to-edge: cap the text at a comfortable
-	// measure and give it a left indent, then Place the whole block in the middle
-	// of the panel. A release heading gets a blank line before it (except the
-	// first) so versions don't run together — that spacing is applied here rather
-	// than in changelogLines so the scroll offset still counts real content lines.
+	// A centred column, not edge-to-edge: cap at a readable measure, indent, then
+	// Place the block in the middle. Blank line before each heading (bar the first)
+	// so versions don't run together.
 	const measure = 64 // readable line length; the panel is usually wider
 	colW := tw - 8
 	if colW > measure {
@@ -1151,8 +1146,8 @@ func (m Model) changelogView() string {
 	}
 	window := styled[start:end]
 
-	// Left-join to a fixed block width so Place moves the column as one unit
-	// (otherwise each line centres on its own and the left edge zig-zags).
+	// Fixed block width so Place moves the column as one unit (else each line
+	// centres on its own and the left edge zig-zags).
 	blockW := 0
 	for _, ln := range window {
 		if w := lipgloss.Width(ln); w > blockW {
@@ -1164,8 +1159,7 @@ func (m Model) changelogView() string {
 	}
 	block := strings.Join(window, "\n")
 
-	// Content sits centred horizontally; centred vertically too when it's shorter
-	// than the panel, top-aligned once it's tall enough to scroll.
+	// Centred horizontally; centred vertically when short, top-aligned once it scrolls.
 	vAlign := lipgloss.Center
 	if len(window) >= innerH {
 		vAlign = lipgloss.Top

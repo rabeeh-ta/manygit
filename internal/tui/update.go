@@ -638,15 +638,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.prCursor = 0
 		}
 	case "esc":
-		// esc backs out of exactly ONE layer of state per press, innermost first,
-		// so it never yanks you further than you meant. Without this a committed
-		// filter could only be cleared by pressing `/` (which resets the needle)
-		// and then esc — two keys to undo one.
-		//
-		// Order is the visual nesting: the diff sits inside Changes, Changes
-		// inside the zoomed pane, and the filters are the outermost thing shaping
-		// what you're looking at. The filters clear last because they're the state
-		// you're most likely to still want.
+		// Back out one layer per press, innermost first — diff, then Changes, then
+		// zoom, then the filters (which clear last, being what you most likely
+		// still want). One case fires per press; the switch's order is the nesting.
 		switch {
 		case m.focus == panelBottom && m.bottomView == bvChanges && m.changeShowDiff:
 			m.changeShowDiff = false
@@ -971,9 +965,8 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
-// setTopView focuses the top slot and shows v. The number keys and `[`/`]` both
-// go through here so a tab can never be entered by one route with side effects
-// the other route skips.
+// setTopView focuses the top slot and shows v. Number keys, [/], right and enter
+// all route through here so no entrance skips another's side effects.
 func (m *Model) setTopView(v topView) {
 	m.focus = panelBranches
 	if v != tvPRs {
@@ -995,13 +988,9 @@ func (m *Model) setBottomView(v bottomView) tea.Cmd {
 	return nil
 }
 
-// cycleTab moves the focused pane's tab bar by delta, wrapping. Repos and Scripts
-// have no tab bar, so it is deliberately a no-op there rather than jumping
-// somewhere the user didn't ask for. `tab` stays pane-cycling everywhere, which
-// is why this lives on its own keys — one key, one meaning.
-//
-// The (x%n + n) % n dance keeps the modulo positive when wrapping backwards; Go's
-// % takes the sign of the dividend.
+// cycleTab moves the focused pane's tab bar by delta, wrapping — a no-op in Repos
+// and Scripts, which have no tabs. On its own keys so `tab` stays pane-cycling
+// everywhere. The (x%n + n) % n keeps the modulo positive wrapping backwards.
 func (m *Model) cycleTab(delta int) tea.Cmd {
 	switch m.focus {
 	case panelBranches:
@@ -1103,31 +1092,18 @@ func (m *Model) checkoutPR() tea.Cmd {
 	)
 }
 
-// keepCursorOn re-points the cursor at the repo at path within the current
-// visible set, or clamps to the top when it's no longer there. Unlike
-// focusRepoByPath it preserves the active filter — it exists for changes that
-// reshuffle the filtered list rather than escape it.
-//
-// It reloads the context panes only when the cursor actually ends up on a
-// different repo. Reloading regardless would be worse than wasteful: the
-// graph/changes replies reset graphSel, graphOffset and changeShowDiff, so a
-// reshuffle that moved nothing would still collapse an open diff and scroll the
-// graph back to the top.
-// reclampCursor keeps the repo cursor on a real, visible row after a status
-// change, and reports whether the panels need reloading. A statusMsg can drop a
-// row out of a filtered list under the cursor: `F` hides a repo the moment it
-// goes clean, and a `/needle` matching on branch stops matching after a
-// checkout. So pushing or discarding the highlighted repo is exactly what makes
-// it leave — the cursor is an index into the visible slice, and a stale one
-// either dangles past the end (nothing highlighted, s/p/d/o all silent no-ops)
-// or, worse, quietly addresses a different repo than the panels are showing.
-//
-// The cursor holds its index and clamps to the new end, so the row that took the
-// departed one's place is highlighted — what you'd expect from any list you
-// delete a row out of. `was` is the path it was on beforehand; the panels reload
-// only when it genuinely ends up somewhere else, for the same reason
-// keepCursorOn is careful about it: a needless reload resets graphSel,
-// graphOffset and changeShowDiff, collapsing an open diff.
+// keepCursorOn re-points the cursor at path within the current visible set, or
+// clamps to the top when it's gone. Unlike focusRepoByPath it preserves the
+// filter — for changes that reshuffle the filtered list, not escape it. Reloads
+// the panes only when the cursor lands on a different repo (a needless reload
+// collapses an open diff by resetting graphSel/graphOffset/changeShowDiff).
+
+// reclampCursor keeps the cursor on a real visible row after a status change and
+// reports whether the panels need reloading. A statusMsg can drop the highlighted
+// row from a filtered list (`F` hides a repo once it's clean; a branch `/needle`
+// stops matching after a checkout), leaving the index dangling past the end or
+// silently addressing a different repo than the panels show. `was` is the path it
+// was on; reloads only if it ends up elsewhere.
 func (m *Model) reclampCursor(was string) tea.Cmd {
 	vis := m.visibleRepos()
 	if m.cursor >= len(vis) {
