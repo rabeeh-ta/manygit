@@ -75,6 +75,7 @@ type Model struct {
 	showHelp        bool  // the settings + help overlay
 	showGraph       bool  // full-screen commit graph overlay
 	showNews        bool  // full-screen news-feed overlay (n)
+	showChangelog   bool  // post-update changelog overlay (shown once after a self-update)
 	showTagsInline  bool  // show each repo's latest tag inline in the Repos rows (t)
 	zoomed          bool  // maximize the focused pane to full screen (z)
 
@@ -127,6 +128,13 @@ type Model struct {
 	newsDebounce int       // bumped on each fetch; the latest debounce tick refreshes
 	newsLoading  bool      // a summarize is in flight (shows "summarizing..." in the top bar)
 	newsCachedAt time.Time // when the current headlines were summarized; gates re-summarizing (newsTTL)
+
+	// post-update changelog (shown once when the app was launched by our own
+	// self-updater): the flattened release notes, a scroll offset, and the version
+	// we updated from (for the "you were here" marker and the seen-once record).
+	changelog       []string
+	changelogOffset int
+	changelogFrom   string
 
 	// PRs view (key 4, in the top-right slot beside Branches): GitHub pull requests
 	// via the gh CLI. Two lists — mine and review-requested — toggled by `m`;
@@ -276,6 +284,9 @@ func (m Model) Init() tea.Cmd {
 	cmds = append(cmds, ghProbeCmd()) // resolve gh availability, then load PRs
 	if len(m.newsFeed) > 1 {
 		cmds = append(cmds, newsTickCmd(m.newsGen)) // rotate cached headlines
+	}
+	if c := changelogTriggerCmd(); c != nil {
+		cmds = append(cmds, c) // fetch the changelog iff we arrived via a self-update
 	}
 	return tea.Batch(cmds...)
 }

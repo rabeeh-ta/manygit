@@ -33,6 +33,40 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+# The release body IS the in-app changelog: manygit fetches it over the GitHub
+# API and shows it once after a self-update (internal/tui/changelog.go). Grouping
+# the commits by their conventional-commit prefix turns the raw log into readable
+# sections; anything not prefixed lands under "Other".
+changelog:
+  use: git
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      # non-user-facing commit TYPES — the (\(.+\))? also catches scoped forms
+      # like docs(readme): , not just the bare docs: prefix.
+      - '^docs(\(.+\))?!?:'
+      - '^test(\(.+\))?!?:'
+      - '^chore(\(.+\))?!?:'
+      - '^ci(\(.+\))?!?:'
+      - '^style(\(.+\))?!?:'
+      # website / landing-page SCOPES. The demo commits are prefixed feat(demo):
+      # / feat(docs): and start with "feat", so they'd otherwise land under
+      # Features. This tool's changelog is about the tool, not the site — and any
+      # site change that mirrors a real tool feature ALSO has a tool-scoped commit
+      # that carries the feature in, so nothing real is lost.
+      - '^\w+\((demo|site|web|docs|readme|landing)\)!?:'
+      - Merge pull request
+      - Merge branch
+
 release:
   github:
     owner: rabeeh-ta

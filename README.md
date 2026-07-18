@@ -138,3 +138,11 @@ git push origin v0.2.0
 ```
 
 The version is taken from the tag; nothing in the code needs editing.
+
+The release's **notes become the in-app changelog**: after someone updates
+through the built-in updater, manygit fetches the recent releases from the GitHub
+API and shows what changed — once, scrollable with `j`/`k`, `esc` to continue. It
+is never packaged into the binary. `.goreleaser.yaml` groups the commits into
+Features / Fixes from their `feat:` / `fix:` prefixes, so write those and the
+changelog writes itself. A fresh install or `go install` never sees the screen —
+only an update through the updater triggers it.

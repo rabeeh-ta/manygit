@@ -6,6 +6,7 @@ import (
 	"manygit/internal/discover"
 	"manygit/internal/gh"
 	"manygit/internal/git"
+	"manygit/internal/selfupdate"
 )
 
 type statusMsg struct {
@@ -36,6 +37,15 @@ type discardDoneMsg struct {
 	path string
 	full bool // D (also removed untracked) vs d (tracked changes only)
 	err  error
+}
+
+// changelogMsg carries the releases fetched for the post-update changelog. from
+// is the version we updated from (for the "you were here" marker). On err, or an
+// empty list, the screen is simply not shown — the app never blocks on it.
+type changelogMsg struct {
+	from     string
+	releases []selfupdate.Release
+	err      error
 }
 
 // rescanMsg carries the result of re-walking the root at a new depth. depth is

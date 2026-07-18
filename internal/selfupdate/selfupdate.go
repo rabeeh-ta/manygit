@@ -28,10 +28,16 @@ const repo = "rabeeh-ta/manygit"
 // memory (the binary is a few MB; 100 MB is comfortably above any real build).
 const maxDownload = 100 << 20
 
-// Release is the subset of the GitHub release payload we use.
+// Release is the subset of the GitHub release payload we use. Body is the
+// release notes — goreleaser writes it from the commits on the tag, and it is
+// what the post-update changelog screen shows. It is never packaged into the
+// binary; it comes over the API with the release.
 type Release struct {
-	Tag    string  `json:"tag_name"`
-	Assets []Asset `json:"assets"`
+	Tag         string  `json:"tag_name"`
+	Name        string  `json:"name"`
+	Body        string  `json:"body"`
+	PublishedAt string  `json:"published_at"`
+	Assets      []Asset `json:"assets"`
 }
 
 // Asset is one uploaded release file.
@@ -61,6 +67,37 @@ func Latest(ctx context.Context) (Release, error) {
 		return Release{}, err
 	}
 	return r, nil
+}
+
+// Releases fetches up to n published releases, newest first — the source for the
+// post-update changelog. Same public, unauthenticated API as Latest; fails soft,
+// so an offline caller just gets an error and shows nothing.
+func Releases(ctx context.Context, n int) ([]Release, error) {
+	if n < 1 {
+		n = 1
+	}
+	if n > 100 {
+		n = 100 // one page; the changelog never needs more than the recent past
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=%d", repo, n), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github api: %s", resp.Status)
+	}
+	var rs []Release
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&rs); err != nil {
+		return nil, err
+	}
+	return rs, nil
 }
 
 // assetName is the archive name goreleaser produces for an os/arch pair, e.g.

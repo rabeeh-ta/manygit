@@ -1085,7 +1085,106 @@ func (m Model) newsView() string {
 	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
 }
 
+// changelogView is the one-time post-update screen: the release notes since the
+// version the user updated from, newest first, scrollable with j/k. Each line was
+// tagged by changelogLines with a kind prefix (clHead/clBody/clMark) so we colour
+// it without re-parsing the markdown.
+func (m Model) changelogView() string {
+	tw, th := m.width, m.height
+	if tw <= 0 {
+		tw = minTermW
+	}
+	if th <= 0 {
+		th = minTermH
+	}
+	innerH := th - 2 // rows inside the border
+
+	// Read as a centred column, not edge-to-edge: cap the text at a comfortable
+	// measure and give it a left indent, then Place the whole block in the middle
+	// of the panel. A release heading gets a blank line before it (except the
+	// first) so versions don't run together — that spacing is applied here rather
+	// than in changelogLines so the scroll offset still counts real content lines.
+	const measure = 64 // readable line length; the panel is usually wider
+	colW := tw - 8
+	if colW > measure {
+		colW = measure
+	}
+	if colW < 20 {
+		colW = 20
+	}
+	clip := lipgloss.NewStyle().MaxWidth(colW)
+	indent := "  "
+
+	newBadge := lipgloss.NewStyle().Reverse(true).Bold(true).Render(" NEW ")
+	styled := make([]string, 0, len(m.changelog))
+	for i, ln := range m.changelog {
+		switch {
+		case strings.HasPrefix(ln, clHeadNew):
+			if i > 0 {
+				styled = append(styled, "")
+			}
+			h := styleTitle.Render(strings.TrimPrefix(ln, clHeadNew))
+			styled = append(styled, clip.Render(h)+"  "+newBadge)
+		case strings.HasPrefix(ln, clHead):
+			if i > 0 {
+				styled = append(styled, "")
+			}
+			styled = append(styled, clip.Render(styleTitle.Render(strings.TrimPrefix(ln, clHead))))
+		case strings.HasPrefix(ln, clMark):
+			styled = append(styled, indent+clip.Render(styleGreen.Render(strings.TrimPrefix(ln, clMark))))
+		case strings.HasPrefix(ln, clBody):
+			body := strings.TrimPrefix(ln, clBody)
+			if strings.TrimSpace(body) == "" {
+				styled = append(styled, "")
+			} else {
+				styled = append(styled, indent+clip.Render(styleDim.Render(body)))
+			}
+		default:
+			styled = append(styled, indent+clip.Render(styleDim.Render(ln)))
+		}
+	}
+
+	start := clampInt(m.changelogOffset, 0, max(0, len(styled)-1))
+	end := start + innerH
+	if end > len(styled) {
+		end = len(styled)
+	}
+	window := styled[start:end]
+
+	// Left-join to a fixed block width so Place moves the column as one unit
+	// (otherwise each line centres on its own and the left edge zig-zags).
+	blockW := 0
+	for _, ln := range window {
+		if w := lipgloss.Width(ln); w > blockW {
+			blockW = w
+		}
+	}
+	for i, ln := range window {
+		window[i] = ln + strings.Repeat(" ", max(0, blockW-lipgloss.Width(ln)))
+	}
+	block := strings.Join(window, "\n")
+
+	// Content sits centred horizontally; centred vertically too when it's shorter
+	// than the panel, top-aligned once it's tall enough to scroll.
+	vAlign := lipgloss.Center
+	if len(window) >= innerH {
+		vAlign = lipgloss.Top
+	}
+	content := lipgloss.Place(tw-4, innerH, lipgloss.Center, vAlign, block)
+
+	more := ""
+	if end < len(styled) {
+		more = "  ↓ more"
+	}
+	title := "What's new" + more + "  (j/k scroll · esc continue)"
+	box := titledBox(title, tw-2, innerH, true, content)
+	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
+}
+
 func (m Model) View() string {
+	if m.showChangelog {
+		return m.changelogView() // the one-time post-update splash sits above all
+	}
 	if m.showGraph {
 		return m.graphView()
 	}

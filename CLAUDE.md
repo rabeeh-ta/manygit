@@ -93,12 +93,37 @@ errors, and the page has no horizontal overflow at 320px.
 
 ## Working conventions
 
-- **Do not run `git` commands that mutate state** (add/commit/branch/push) — the
-  user manages all git state. Read-only `status`/`log`/`diff`/`show` is fine.
+- **Don't commit on your own — the user is the default committer.** Make the file
+  changes and stop; the user reviews and commits. Never run a state-mutating `git`
+  command (`add`/`commit`/`branch`/`push`/`reset`/`rebase`/`tag`/…) on your own
+  initiative, and don't "helpfully" stage one — this holds even when a change is
+  finished and verified. **The one exception: when the user explicitly tells you
+  to commit (or push), you may** — do exactly what they asked, then stop.
+  Read-only `status`/`log`/`diff`/`show` is always fine.
 - `preview-shots/` is gitignored — local screenshots of `docs/`, never committed.
 - The site is three static files and needs no build step. Keep it that way: no
   bundler, no framework, all asset paths **relative** (Pages serves it from the
   `/manygit/` subpath, so a leading `/` 404s).
+
+## Post-update changelog
+
+After a self-update, manygit shows the release notes **once**, scrollable
+(`internal/tui/changelog.go` + `changelogView` in `view.go`). Mechanism, so it
+isn't re-derived wrong later:
+
+- **Storage**: the GitHub Release `body`, one per tag. Never packaged in the
+  binary — `selfupdate.Releases()` fetches it over the API. `.goreleaser.yaml`'s
+  `changelog:` block groups commits into Features / Fixes.
+- **Trigger**: the updater injects `MANYGIT_UPDATED_FROM=<old version>` into the
+  env of the binary it re-execs (`main.go`). Only that sets it, so a fresh
+  install / `go install` never shows the screen. A `changelog-seen` marker in the
+  cache dir makes it fire exactly once per update even across restarts.
+- **Fails soft**: offline or API error → no screen, app launches normally.
+- **The browser demo is deliberately NOT changed for this.** The screen has no
+  keybinding — it can only appear via the update handoff, which a browser can't
+  do. There's nothing in the "keys are the real keys" model to port, and faking a
+  trigger would make the demo claim a key that doesn't exist. If a key to
+  *re-open* the changelog is ever added, that's when the demo gets it.
 
 ## Releasing
 

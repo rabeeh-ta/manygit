@@ -181,6 +181,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		exp := m.setStatus(styleGreen.Render("checked out PR #" + num + " in " + name))
 		m.focusRepoByPath(msg.path) // land on that repo's branches, ready to review
 		return m, tea.Batch(exp, statusCmd(msg.path), m.loadContextCmd())
+	case changelogMsg:
+		// Fail soft: an error, or no releases with any notes, just means no
+		// screen — the app is already up behind it. Mark it seen either way so a
+		// transient fetch failure doesn't re-nag on every launch.
+		if msg.err == nil && len(msg.releases) > 0 {
+			lines := changelogLines(msg.releases, msg.from)
+			if len(lines) > 0 {
+				m.changelog = lines
+				m.changelogFrom = msg.from
+				m.changelogOffset = 0
+				m.showChangelog = true
+			}
+		}
+		markChangelogSeen(msg.from)
+		return m, nil
 	case rescanMsg:
 		switch {
 		case msg.err != nil:
@@ -430,6 +445,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.newsOffset > 0 {
 				m.newsOffset--
 			}
+		}
+		return m, nil
+	}
+	if m.showChangelog {
+		// The one-time post-update screen: scroll with j/k/arrows, esc (or q)
+		// dismisses into the app. It sits above everything; once closed it can't
+		// be reopened (the seen marker is already written), which is why there's
+		// no key to toggle it back on — it is a "here's what's new" splash, not a
+		// pane you navigate to.
+		switch msg.String() {
+		case "esc", "q", "enter", " ":
+			m.showChangelog = false
+		case "down", "j":
+			if m.changelogOffset < len(m.changelog)-1 {
+				m.changelogOffset++
+			}
+		case "up", "k":
+			if m.changelogOffset > 0 {
+				m.changelogOffset--
+			}
+		case "ctrl+c":
+			return m, tea.Quit
 		}
 		return m, nil
 	}

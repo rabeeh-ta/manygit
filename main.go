@@ -97,7 +97,13 @@ func maybeSelfUpdate(current string) {
 	fmt.Printf("Updated to %s — relaunching...\n", r.Tag)
 	exe, err := os.Executable()
 	if err == nil {
-		err = syscall.Exec(exe, os.Args, os.Environ())
+		// Tell the re-exec'd (new) binary it arrived via our updater, and from
+		// which version. This is the ONLY thing that sets the var, so a fresh
+		// install or `go install` never triggers the changelog — see
+		// internal/tui changelog handling. current is the OLD version (this
+		// process was built before the update).
+		env := append(os.Environ(), tui.EnvUpdatedFrom+"="+current)
+		err = syscall.Exec(exe, os.Args, env)
 	}
 	if err != nil {
 		fmt.Println("Please restart manygit to use the new version.")
