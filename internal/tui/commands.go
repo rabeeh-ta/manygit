@@ -167,7 +167,7 @@ func openRepoCmd(openCmd, path string) tea.Cmd {
 	return func() tea.Msg {
 		prog, args, ok := openArgs(openCmd, path)
 		if !ok {
-			return openDoneMsg{path: path, err: errors.New("no editor command set (see ? settings)")}
+			return openDoneMsg{path: path, err: errors.New("no editor command set (see , settings)")}
 		}
 		var out bytes.Buffer
 		cmd := exec.Command(prog, args...)

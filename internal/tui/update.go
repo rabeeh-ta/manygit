@@ -29,6 +29,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastFetch = time.Now()
 		return m, m.refetchAllCmd()
 	case statusMsg:
+		// Whose row the cursor is on BEFORE the status lands — the new status can
+		// change which repos are visible, and the cursor is an index into that
+		// list, not a repo identity.
+		was := ""
+		if r := m.currentVisible(m.visibleRepos()); r != nil {
+			was = r.repo.Path
+		}
 		for _, r := range m.repos {
 			if r.repo.Path == msg.path {
 				r.status = msg.st
@@ -36,7 +43,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		return m, nil
+		return m, m.reclampCursor(was)
 	case fetchDoneMsg:
 		var cmds []tea.Cmd
 		for _, r := range m.repos {
@@ -431,6 +438,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "?":
+		// ? is the universal "show me the keys" reflex — it must land on the
+		// keybindings, not a settings form. Settings has its own key now (,).
+		m.showHelp = true
+		m.showKeys = true
+	case ",":
 		m.showHelp = true
 		m.showKeys = false
 		m.settingsCursor = themeIndex(m.cfg.Theme) // start on the active theme
@@ -471,26 +483,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "2":
 		m.focus = panelScripts
 	case "3":
-		m.focus = panelBranches
-		m.clearPRFilter() // leaving the PRs sub-view drops its `/` filter
-		m.topView = tvBranches
+		m.setTopView(tvBranches)
 	case "4":
-		m.focus = panelBranches
-		m.topView = tvPRs
+		m.setTopView(tvPRs)
 	case "5":
-		m.focus = panelBottom
-		m.clearPRFilter()
-		m.bottomView = bvGraph
+		return m, m.setBottomView(bvGraph)
 	case "6":
-		m.focus = panelBottom
-		m.clearPRFilter()
-		m.bottomView = bvChanges
-		m.changeShowDiff = false
-		return m, m.loadChangesCmd()
+		return m, m.setBottomView(bvChanges)
 	case "7":
-		m.focus = panelBottom
-		m.clearPRFilter()
-		m.bottomView = bvOutput
+		return m, m.setBottomView(bvOutput)
+	case "]":
+		return m, m.cycleTab(1)
+	case "[":
+		return m, m.cycleTab(-1)
 	case "tab":
 		m.focus = (m.focus + 1) % panelCount
 	case "shift+tab":
@@ -503,8 +508,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// any other panel the arrows stay unbound, leaving them free for
 		// panel-local uses (e.g. scrolling a wide diff) later.
 		if m.focus == panelRepos {
-			m.focus = panelBranches
-			m.topView = tvBranches // → always shows the highlighted repo's branches
+			m.setTopView(tvBranches) // → always shows the highlighted repo's branches
 			m.branchCursor = 0
 		}
 	case "left":
@@ -575,9 +579,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.focus {
 		case panelRepos:
 			// Jump into the highlighted repo's branches.
-			m.focus = panelBranches
-			m.topView = tvBranches
-			m.clearPRFilter()
+			m.setTopView(tvBranches)
 			m.branchCursor = 0
 			return m, nil
 		case panelScripts:
@@ -820,8 +822,28 @@ func (m Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
-	case "tab", "?":
+	case "tab":
 		m.showKeys = !m.showKeys
+	case "?":
+		// Each key toggles its OWN page: ? on the keys closes, ? on settings
+		// switches to the keys. Same for , the other way round.
+		if m.showKeys {
+			// This is a CLOSE, so it owes the same preview cleanup as , and esc:
+			// j/k on the settings page apply themes live, and you can reach the
+			// keys page (and this branch) with that preview still uncommitted.
+			applyTheme(themeByName(m.cfg.Theme))
+			m.showHelp = false
+		} else {
+			m.showKeys = true
+		}
+	case ",":
+		if m.showKeys {
+			m.showKeys = false
+			m.settingsCursor = themeIndex(m.cfg.Theme)
+		} else {
+			applyTheme(themeByName(m.cfg.Theme)) // drop any live theme preview
+			m.showHelp = false
+		}
 	case "esc":
 		applyTheme(themeByName(m.cfg.Theme)) // discard any live theme preview
 		m.showHelp = false
@@ -910,6 +932,49 @@ func clampInt(v, lo, hi int) int {
 		return hi
 	}
 	return v
+}
+
+// setTopView focuses the top slot and shows v. The number keys and `[`/`]` both
+// go through here so a tab can never be entered by one route with side effects
+// the other route skips.
+func (m *Model) setTopView(v topView) {
+	m.focus = panelBranches
+	if v != tvPRs {
+		m.clearPRFilter() // leaving the PRs sub-view drops its `/` filter
+	}
+	m.topView = v
+}
+
+// setBottomView focuses the bottom slot and shows v, with the same side effects:
+// a PR needle is meaningless down here, and Changes has to (re)load its files.
+func (m *Model) setBottomView(v bottomView) tea.Cmd {
+	m.focus = panelBottom
+	m.clearPRFilter()
+	m.bottomView = v
+	if v == bvChanges {
+		m.changeShowDiff = false
+		return m.loadChangesCmd()
+	}
+	return nil
+}
+
+// cycleTab moves the focused pane's tab bar by delta, wrapping. Repos and Scripts
+// have no tab bar, so it is deliberately a no-op there rather than jumping
+// somewhere the user didn't ask for. `tab` stays pane-cycling everywhere, which
+// is why this lives on its own keys — one key, one meaning.
+//
+// The (x%n + n) % n dance keeps the modulo positive when wrapping backwards; Go's
+// % takes the sign of the dividend.
+func (m *Model) cycleTab(delta int) tea.Cmd {
+	switch m.focus {
+	case panelBranches:
+		n := int(topViewCount)
+		m.setTopView(topView(((int(m.topView)+delta)%n + n) % n))
+	case panelBottom:
+		n := int(bottomViewCount)
+		return m.setBottomView(bottomView(((int(m.bottomView)+delta)%n + n) % n))
+	}
+	return nil
 }
 
 // topScroll moves the cursor of the active top-right view (Branches or PRs).
@@ -1011,6 +1076,35 @@ func (m *Model) checkoutPR() tea.Cmd {
 // graph/changes replies reset graphSel, graphOffset and changeShowDiff, so a
 // reshuffle that moved nothing would still collapse an open diff and scroll the
 // graph back to the top.
+// reclampCursor keeps the repo cursor on a real, visible row after a status
+// change, and reports whether the panels need reloading. A statusMsg can drop a
+// row out of a filtered list under the cursor: `F` hides a repo the moment it
+// goes clean, and a `/needle` matching on branch stops matching after a
+// checkout. So pushing or discarding the highlighted repo is exactly what makes
+// it leave — the cursor is an index into the visible slice, and a stale one
+// either dangles past the end (nothing highlighted, s/p/d/o all silent no-ops)
+// or, worse, quietly addresses a different repo than the panels are showing.
+//
+// The cursor holds its index and clamps to the new end, so the row that took the
+// departed one's place is highlighted — what you'd expect from any list you
+// delete a row out of. `was` is the path it was on beforehand; the panels reload
+// only when it genuinely ends up somewhere else, for the same reason
+// keepCursorOn is careful about it: a needless reload resets graphSel,
+// graphOffset and changeShowDiff, collapsing an open diff.
+func (m *Model) reclampCursor(was string) tea.Cmd {
+	vis := m.visibleRepos()
+	if m.cursor >= len(vis) {
+		m.cursor = len(vis) - 1
+	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+	if cur := m.currentVisible(vis); cur != nil && cur.repo.Path != was {
+		return m.loadContextCmd()
+	}
+	return nil
+}
+
 func (m *Model) keepCursorOn(path string) tea.Cmd {
 	m.cursor = 0
 	for i, r := range m.visibleRepos() {

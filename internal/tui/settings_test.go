@@ -40,7 +40,7 @@ func TestTUI_HelpFitsTerminal(t *testing.T) {
 		m := loadAll(t, New(cfg, "", repos, nil), d.w, d.h)
 		mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 		m = mm.(Model)
-		for _, view := range []string{"settings", "keys"} {
+		for _, view := range []string{"keys", "settings"} { // ? lands on keys; tab flips
 			rendered := m.helpView()
 			lines := strings.Split(rendered, "\n")
 			if len(lines) > d.h {
@@ -55,7 +55,7 @@ func TestTUI_HelpFitsTerminal(t *testing.T) {
 			if !strings.Contains(stripANSI(rendered), "esc close") {
 				t.Errorf("%dx%d %s: footer 'esc close' was clipped", d.w, d.h, view)
 			}
-			mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // flip to keys for the 2nd pass
+			mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // flip for the 2nd pass
 			m = mm.(Model)
 		}
 	}
@@ -79,7 +79,7 @@ func TestApplyTheme(t *testing.T) {
 	}
 }
 
-// The ? settings screen is a radio list: j/k move through options, a theme row
+// The , settings screen is a radio list: j/k move through options, a theme row
 // previews live, enter selects; tab flips to the keybindings view.
 func TestTUI_SettingsScreen(t *testing.T) {
 	t.Cleanup(func() { applyTheme(themeByName("default")) })
@@ -87,7 +87,7 @@ func TestTUI_SettingsScreen(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
 
-	mm, _ := m.Update(rk("?"))
+	mm, _ := m.Update(rk(","))
 	m = mm.(Model)
 	if !m.showHelp || m.settingsCursor != 0 { // opens on the active theme (default = 0)
 		t.Fatalf("? should open settings on the active theme, cursor=%d", m.settingsCursor)
@@ -168,7 +168,7 @@ func TestTUI_HarnessSettingAndBar(t *testing.T) {
 	if v := stripANSI(m.View()); !strings.Contains(v, "harness: claude") {
 		t.Errorf("bottom bar should show the active harness; view:\n%s", v)
 	}
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(",")}) // , opens settings
 	m = mm.(Model)
 	sv := stripANSI(m.View())
 	for _, want := range []string{"AI harness", "claude", "codex"} {
@@ -197,7 +197,7 @@ func TestTUI_SettingsPreviewRevert(t *testing.T) {
 	t.Cleanup(func() { applyTheme(themeByName("default")) })
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, "", repos, nil), 100, 30)
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(",")}) // , opens settings
 	m = mm.(Model)
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // preview serika_dark
 	m = mm.(Model)
@@ -441,9 +441,8 @@ func TestTUI_ShiftTabCyclesBackwards(t *testing.T) {
 func TestTUI_KeyColumnFitsEveryLabel(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
+	// ? lands on the keybindings directly now — settings has its own key (,)
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
-	m = mm.(Model)
-	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // flip to the keybindings page
 	body := stripANSI(mm.(Model).View())
 
 	for _, key := range []string{"left/right", "no-remote", "shift+tab", "b/enter", "5 enter"} {
@@ -546,5 +545,182 @@ func TestTUI_EscPeelsOneLayerAtATime(t *testing.T) {
 	}
 	if m = esc(m); m.filter != "" {
 		t.Fatalf("esc #4 should clear the filter; filter=%q", m.filter)
+	}
+}
+
+// `]` / `[` cycle the focused pane's TAB BAR, wrapping. They are their own keys
+// precisely so `tab` keeps one meaning everywhere — pane cycling — instead of
+// changing behaviour depending on which pane you happen to be standing in.
+func TestTUI_BracketsCycleTabs(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
+	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+	press := func(m Model, s string) Model { mm, _ := m.Update(rk(s)); return mm.(Model) }
+
+	// top slot: 2 tabs, wraps
+	m = press(m, "3")
+	if m.topView != tvBranches {
+		t.Fatalf("3 -> topView %v, want tvBranches", m.topView)
+	}
+	m = press(m, "]")
+	if m.topView != tvPRs {
+		t.Errorf("] -> topView %v, want tvPRs", m.topView)
+	}
+	m = press(m, "]")
+	if m.topView != tvBranches {
+		t.Errorf("] wrap -> topView %v, want tvBranches", m.topView)
+	}
+	m = press(m, "[")
+	if m.topView != tvPRs {
+		t.Errorf("[ wrap backwards -> topView %v, want tvPRs", m.topView)
+	}
+
+	// bottom slot: 3 tabs, wraps both ways
+	m = press(m, "5")
+	for i, want := range []bottomView{bvChanges, bvOutput, bvGraph} {
+		m = press(m, "]")
+		if m.bottomView != want {
+			t.Errorf("] #%d -> bottomView %v, want %v", i+1, m.bottomView, want)
+		}
+	}
+	m = press(m, "[")
+	if m.bottomView != bvOutput {
+		t.Errorf("[ from Graph -> bottomView %v, want bvOutput (wrap)", m.bottomView)
+	}
+}
+
+// Repos and Scripts have no tab bar, so the brackets must do nothing there —
+// not silently jump the user to a pane they didn't ask for.
+func TestTUI_BracketsNoopWithoutTabs(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
+	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+
+	for _, pane := range []string{"1", "2"} {
+		mm, _ := m.Update(rk(pane))
+		m = mm.(Model)
+		before := m.focus
+		for _, k := range []string{"]", "[", "]"} {
+			mm, _ = m.Update(rk(k))
+			m = mm.(Model)
+		}
+		if m.focus != before {
+			t.Errorf("brackets in pane %s moved focus %v -> %v; want a no-op", pane, before, m.focus)
+		}
+	}
+}
+
+// Every route into a tab must carry the same side effects, or the same
+// destination means different state depending on how you got there. Entering the
+// PRs tab and filtering, then leaving to Branches by ANY route, must drop the PR
+// needle — `3`, `]`, `[`, `right`, and enter-on-Repos all land on Branches.
+func TestTUI_EveryRouteToBranchesDropsPRFilter(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+
+	routes := map[string]func(Model) Model{
+		"3": func(m Model) Model { mm, _ := m.Update(rk("3")); return mm.(Model) },
+		"]": func(m Model) Model { mm, _ := m.Update(rk("]")); return mm.(Model) },
+		"[": func(m Model) Model { mm, _ := m.Update(rk("[")); return mm.(Model) },
+		"right": func(m Model) Model {
+			mm, _ := m.Update(rk("1"))
+			mm, _ = mm.(Model).Update(tea.KeyMsg{Type: tea.KeyRight})
+			return mm.(Model)
+		},
+		"enter": func(m Model) Model {
+			mm, _ := m.Update(rk("1"))
+			mm, _ = mm.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+			return mm.(Model)
+		},
+	}
+	for name, route := range routes {
+		m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
+		mm, _ := m.Update(rk("4")) // PRs
+		m = mm.(Model)
+		mm, _ = m.Update(rk("/")) // filter scoped to the PR sub-view
+		m = mm.(Model)
+		for _, r := range "zz" {
+			mm, _ = m.Update(rk(string(r)))
+			m = mm.(Model)
+		}
+		mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // commit
+		m = mm.(Model)
+		if m.filterPanel != filterPRs || m.filter == "" {
+			t.Fatalf("%s: setup failed, filterPanel=%v filter=%q", name, m.filterPanel, m.filter)
+		}
+		m = route(m)
+		if m.topView != tvBranches {
+			t.Errorf("%s: topView = %v, want tvBranches", name, m.topView)
+		}
+		if m.filter != "" {
+			t.Errorf("%s: landed on Branches with a live PR needle %q", name, m.filter)
+		}
+	}
+}
+
+// ? is the universal "show me the keys" reflex. It must land on the keybindings,
+// never on a settings form — that is the whole point of splitting the two. Each
+// key also toggles its OWN page: ? on the keys closes; ? on settings switches.
+func TestTUI_HelpAndSettingsAreSeparateKeys(t *testing.T) {
+	t.Cleanup(func() { applyTheme(themeByName("default")) })
+	cfg, repos := twoRepos(t)
+	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+	press := func(m Model, s string) Model { mm, _ := m.Update(rk(s)); return mm.(Model) }
+
+	// ? -> keys
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
+	m = press(m, "?")
+	if !m.showHelp || !m.showKeys {
+		t.Fatalf("? -> showHelp=%v showKeys=%v, want both true", m.showHelp, m.showKeys)
+	}
+	if v := stripANSI(m.View()); !strings.Contains(v, "keybindings") {
+		t.Error("? should render the keybindings page")
+	}
+	// ? again closes it
+	if m = press(m, "?"); m.showHelp {
+		t.Error("? on the keys page should close the overlay")
+	}
+
+	// , -> settings, on the active theme
+	m = press(m, ",")
+	if !m.showHelp || m.showKeys {
+		t.Fatalf(", -> showHelp=%v showKeys=%v, want settings", m.showHelp, m.showKeys)
+	}
+	if v := stripANSI(m.View()); !strings.Contains(v, "settings") {
+		t.Error(", should render the settings page")
+	}
+	if m.settingsCursor != themeIndex(m.cfg.Theme) {
+		t.Errorf("settingsCursor = %d, want the active theme row %d", m.settingsCursor, themeIndex(m.cfg.Theme))
+	}
+	// , again closes it
+	if m = press(m, ","); m.showHelp {
+		t.Error(", on the settings page should close the overlay")
+	}
+
+	// tab still flips between the two
+	m = press(m, "?")
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = mm.(Model)
+	if m.showKeys {
+		t.Error("tab from the keys page should flip to settings")
+	}
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if !mm.(Model).showKeys {
+		t.Error("tab from settings should flip back to the keys")
+	}
+}
+
+// The keybindings page is the ONLY place that names `,`, so it is the entire
+// discovery chain for settings. If it stops listing it, settings is unreachable
+// for anyone who doesn't already know the key.
+func TestTUI_KeysPageDocumentsSettingsKey(t *testing.T) {
+	cfg, repos := twoRepos(t)
+	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	v := stripANSI(mm.(Model).View())
+	for _, want := range []string{"This screen", ",", "settings"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("the keys page must mention %q — it is how you find settings", want)
+		}
 	}
 }

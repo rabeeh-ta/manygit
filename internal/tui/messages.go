@@ -41,7 +41,7 @@ type discardDoneMsg struct {
 // rescanMsg carries the result of re-walking the root at a new depth. depth is
 // the *candidate* — it is only committed to the config if the walk found repos,
 // so the setting can never leave the Repos pane empty (main.go refuses to start
-// with zero repos; the `?` screen must not be able to reach that state either).
+// with zero repos; the `,` settings screen must not be able to reach that state either).
 type rescanMsg struct {
 	depth int
 	repos []discover.Repo

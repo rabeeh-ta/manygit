@@ -413,7 +413,20 @@
 
   /* --------------------------------------------------------- view-model fns */
 
-  function needsAttention(r) { return r.dirty > 0 || r.ahead > 0 || r.behind > 0; }
+  // The Go reads r.status, which is the ZERO VALUE until statusMsg lands: an
+  // unloaded repo has 0 dirty, 0 ahead, 0 behind, no remote and no branch. Every
+  // consumer gets that for free — needsAttention, the s/p/d guards, checkout.
+  // The demo's fixtures instead carry their post-load numbers from the very
+  // first frame, so anything reading them directly leaks the answer into the
+  // boot window: `F` would list seven repos while the binary lists none, and `s`
+  // would report "synced" against a row still drawn as `.`. These accessors ARE
+  // that zero value — the same rule CLAUDE.md states for runInit.
+  function stDirty(r) { return r.loaded ? r.dirty : 0; }
+  function stAhead(r) { return r.loaded ? r.ahead : 0; }
+  function stBehind(r) { return r.loaded ? r.behind : 0; }
+  function stRemote(r) { return r.loaded && r.remote; }
+
+  function needsAttention(r) { return stDirty(r) > 0 || stAhead(r) > 0 || stBehind(r) > 0; }
 
   // currentBranch is the branch label a row shows: "detached" when the head is,
   // otherwise the branch name. `/` matches this string, so it has to be the same
@@ -461,7 +474,14 @@
     var n = S.filter.toLowerCase();
     return branches.filter(function (b) { return b.name.toLowerCase().indexOf(n) >= 0; });
   }
-  function activePRs() { return S.prShowReview ? PR_REVIEW : PR_MINE; }
+  // Go: m.prMine/m.prReview are nil until prsMsg lands, so every reader is
+  // implicitly gated on prLoaded — the lists, the header counts, and the top-bar
+  // badge alike. These accessors are that nil-ness. Without them runInit shows a
+  // full PR list in the 260ms before the fetch returns, and prEmptyState's
+  // "Loading PRs..." branch can never fire.
+  function prMine() { return S.prLoaded ? PR_MINE : []; }
+  function prReview() { return S.prLoaded ? PR_REVIEW : []; }
+  function activePRs() { return S.prShowReview ? prReview() : prMine(); }
   function visiblePRs() {
     var prs = activePRs();
     if (S.filterPanel !== "prs" || !S.filter) return prs;
@@ -558,9 +578,15 @@
   function renderRepos(h) {
     var vis = visibleRepos();
     if (!vis.length) {
-      return centerBlock(
-        d(S.filterAttention ? "Everything is in sync" : 'No repos match "' + S.filter + '"')
-      );
+      // Both filters can be on at once, and then the needle is what emptied the
+      // list — `F` + `/zzzz` must not claim "Everything is in sync" while seven
+      // repos are dirty. Say why the list is empty, innermost cause first.
+      // (The Go renders an empty box here; these two strings are the port's own.
+      // See the note in CLAUDE.md.)
+      var why = S.filter && S.filterPanel === "repos"
+        ? 'No repos match "' + S.filter + '"'
+        : "Everything is in sync";
+      return centerBlock(d(why));
     }
     var lines = [], cursorLine = 0, last = null;
     vis.forEach(function (r, i) {
@@ -690,8 +716,8 @@
     if (!S.ghAvailable) {
       return centerBlock(d(prUnavailableHint()).replace(/\n/g, "<br>"));
     }
-    var my = "my PRs (" + PR_MINE.length + ")";
-    var rev = "review requests (" + PR_REVIEW.length + ")";
+    var my = "my PRs (" + prMine().length + ")";
+    var rev = "review requests (" + prReview().length + ")";
     var header = S.prShowReview
       ? " " + d("m: " + my) + d("    ") + gp(rev)
       : " " + gp(my) + d("    ") + d("m: " + rev);
@@ -829,7 +855,7 @@
 
   function prBadge() {
     if (!S.ghAvailable) return "";
-    var rev = PR_REVIEW.length, mine = PR_MINE.length;
+    var rev = prReview().length, mine = prMine().length;
     if (!rev && !mine) return "";
     var parts = [];
     if (rev) parts.push(yl("review " + rev));
@@ -857,7 +883,7 @@
     var enter = "enter branches";
     if (S.focus === "scripts") enter = "enter run";
     else if (S.focus === "branches") enter = S.topView === "prs" ? "enter checkout PR" : "enter checkout";
-    return d(enter + " | z zoom | g graph | n news | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ? help | q quit");
+    return d(enter + " | z zoom | g graph | n news | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ? keys | , settings | q quit");
   }
   function indicators() {
     var harnessOK = HARNESSES.some(function (h) { return h.name === S.harness && h.installed; });
@@ -898,15 +924,23 @@
     }
     var hdr = {};
     hdr[SK_THEME] = gp("Theme") + d("   (previews live)");
-    hdr[SK_HARNESS] = gp("AI harness") + d("   (grayed = not installed)");
-    hdr[SK_NEWSDAYS] = gp("News window") + d("   (top-bar feed lookback)");
-    hdr[SK_MAXDEPTH] = gp("Scan depth") + d("   (folders below the root to search; rescans on select)");
+    hdr[SK_HARNESS] = gp("AI harness") + d("   (grey = not installed)");
+    hdr[SK_NEWSDAYS] = gp("News window") + d("   (top-bar lookback)");
+    hdr[SK_MAXDEPTH] = gp("Scan depth") + d("   (rescans on select)");
     hdr[SK_GLYPH] = gp("Ahead / behind glyphs");
-    hdr[SK_EDITOR] = gp("Editor") + d("   (`o` opens the repo — e.g. code, cursor, code -r)");
+    hdr[SK_EDITOR] = gp("Editor") + d("   (`o` opens the repo)");
 
-    var mid = [], cursorLine = 0, prev = -1, rows = settingRows();
+    // Two columns, split at SK_MAXDEPTH — the Go splits the same way so the whole
+    // list fits the documented 80x20 minimum without scrolling. settingRows()
+    // order is unchanged, so j/k still walks top-to-bottom, left column then right.
+    var left = [], right = [], cursorLine = 0, prev = -1, rows = settingRows();
     rows.forEach(function (r, i) {
-      if (r.kind !== prev) { mid.push("<div>" + hdr[r.kind] + "</div>"); prev = r.kind; }
+      var mid = r.kind >= SK_MAXDEPTH ? right : left;
+      if (r.kind !== prev) {
+        if (mid.length) mid.push("<div>&nbsp;</div>"); // air above every group but the column's first
+        mid.push("<div>" + hdr[r.kind] + "</div>");
+        prev = r.kind;
+      }
       var on = S.settingsCursor === i;
       if (on) cursorLine = mid.length;
       if (r.kind === SK_THEME) {
@@ -933,11 +967,15 @@
         mid.push("<div>   " + (on ? cur("> ") : "  ") + (on ? cur(val) : d(val)) + d(hint) + "</div>");
       }
     });
-    var avail = Math.max(1, h - 3);
-    var w = win(mid.length, cursorLine, avail);
-    return "<div>" + sp("a", "manygit — settings") + "</div><div>&nbsp;</div>" +
-      mid.slice(w[0], w[1]).join("") +
-      "<div>" + d("   j/k move · enter select · tab keybindings · esc close") + "</div>";
+    var avail = Math.max(1, h - 4); // title, blank, blank, footer
+    var n = Math.max(left.length, right.length);
+    while (left.length < n) left.push("<div>&nbsp;</div>");
+    while (right.length < n) right.push("<div>&nbsp;</div>");
+    var w = win(n, cursorLine, avail);
+    return "<div>" + sp("a", "manygit — settings") + d("   (,)") + "</div><div>&nbsp;</div>" +
+      '<div class="scols"><div>' + left.slice(w[0], w[1]).join("") + "</div>" +
+      "<div>" + right.slice(w[0], w[1]).join("") + "</div></div>" +
+      "<div>&nbsp;</div><div>" + d("j/k move · enter select · tab keys · esc close") + "</div>";
   }
 
   function keysBody() {
@@ -950,6 +988,8 @@
       kr("4", "PRs (beside Branches)"),
       kr("5/6/7", "bottom: Graph / Changes / Output"),
       kr("tab", "cycle panels"),
+      kr("shift+tab", "cycle panels backwards"),
+      kr("[ ]", "cycle the focused pane's tabs"),
       kr("z", "zoom the focused pane full-screen"),
       kr("j/k", "move in the focused panel"),
       kr("←/→", "hop between Repos and Branches"),
@@ -959,11 +999,23 @@
       kr("t", "toggle each repo's latest tag inline"),
       kr("F", "only changed / unsynced repos"),
       kr("/", "filter the focused list"),
+      kr("esc", "back out one layer of state"),
       "<div>&nbsp;</div>",
       "<div>" + gp("GitHub PRs (4)") + d("   (needs gh)") + "</div>",
       kr("m", "toggle mine / review-requested"),
-      kr("enter", "checkout the PR's branch in its repo")
+      kr("enter", "checkout the PR's branch in its repo"),
+      "<div>&nbsp;</div>",
+      "<div>" + gp("This screen") + "</div>",
+      kr("?", "this page"),
+      kr(",", "settings (themes, harness, depth)"),
+      kr("tab", "flip keys <-> settings"),
+      kr("q", "quit manygit")
     ];
+    // The Go keeps "Graph -> Changes" at the foot of the LEFT column (view.go's
+    // keysBody). It sits on the right here purely to balance the two columns: a
+    // real terminal is as tall as you like, but this one is a fixed 498px (27
+    // lines) below 768px, and a 28-line left column clipped its last row off.
+    // Same rows, same order, same strings — only which column they land in.
     var right = [
       "<div>" + gp("Actions") + d(" on the > repo") + "</div>",
       kr("s", "sync (fetch + pull --ff-only)"),
@@ -973,6 +1025,13 @@
       kr("d/D", "discard changes / +untracked (confirm)"),
       kr("o", "open the repo in your editor"),
       "<div>&nbsp;</div>",
+      "<div>" + gp("Graph (5) -> Changes (6)") + "</div>",
+      kr("5 j/k", "select a commit (WIP on top)"),
+      kr("5 enter", "show its changed files"),
+      kr("6 j/k", "pick a file"),
+      kr("6 enter", "view its diff"),
+      kr("esc", "back: diff / files / graph"),
+      "<div>&nbsp;</div>",
       "<div>" + gp("Status column") + "</div>",
       kr(gr("ok"), "up to date with upstream"),
       kr(yl(up + "N"), "ahead — commits to PUSH"),
@@ -980,10 +1039,10 @@
       kr(mg(up + "N" + dn + "M"), "diverged"),
       kr(og("*N"), "N files changed (dirty)"),
       kr(d("~ ."), "fetching / loading"),
-      kr(d("no-remote"), "local-only repo (no remote)"),
-      kr(rd("!"), "no upstream, or error")
+      kr(d("no-remote"), "local-only repo (no remote configured)"),
+      kr(rd("!"), "branch has no upstream, or error")
     ];
-    return "<div>" + sp("a", "manygit — keybindings") + d("   (tab: back to settings · esc close)") + "</div>" +
+    return "<div>" + sp("a", "manygit — keybindings") + d("   (tab or , for settings · esc close)") + "</div>" +
       '<div>&nbsp;</div><div class="kcols"><div>' + left.join("") + "</div><div>" + right.join("") + "</div></div>";
   }
 
@@ -999,8 +1058,12 @@
     if (S.showGraph) { renderOverlay(graphOverlay(rows("gfull", 20))); return; }
     if (S.showNews) { renderOverlay(newsOverlay(rows("nfull", 20))); return; }
     if (S.showHelp) {
-      // helpView is an untitled full-screen panel (overlayBox), not a titledBox
-      renderOverlay(pane("", true, S.showKeys ? keysBody() : settingsBody(rows("help", 20)), "help"));
+      // helpView is an untitled full-screen panel (overlayBox), not a titledBox.
+      // overlayBox centres the body block both ways — the block moves as a unit,
+      // so the columns inside stay aligned with each other.
+      renderOverlay(pane("", true,
+        '<div class="overlay">' + (S.showKeys ? keysBody() : settingsBody(rows("help", 20))) + "</div>",
+        "help"));
       return;
     }
 
@@ -1068,15 +1131,29 @@
   function graphOverlay(h) {
     var r = curRepo();
     var lines = graph.map(graphLineHTML);
+    // Go: graphView renders "(loading graph…)" until graphLines fills, rather
+    // than an empty box. loadContext() only lands at 300ms, so this is reachable.
+    if (!lines.length) {
+      return pane(d("Graph: " + (r ? r.n : "(no repo)") + "  (j/k scroll, esc close)"), true,
+        "<div>" + d("(loading graph…)") + "</div>", "gfull");
+    }
     var start = clamp(S.graphOffset, 0, Math.max(0, lines.length - 1));
     var body = lines.slice(start, start + h).map(function (l) { return "<div>" + l + "</div>"; }).join("");
     return pane(d("Graph: " + (r ? r.n : "(no repo)") + "  (j/k scroll, esc close)"), true, body, "gfull");
   }
   function newsOverlay(h) {
+    var title = d("News — " + S.newsFeed.length + " headlines  (j/k scroll, esc close)");
+    // Go: newsView has two empty-feed states, summarizing vs nothing to say. The
+    // feed only lands at 2100ms of runInit, so `n` before then hits the first.
+    if (!S.newsFeed.length) {
+      var empty = S.newsLoading
+        ? "(summarizing recent commits…)"
+        : "(no main-branch activity in the last " + S.newsDays + " days, or no AI harness set)";
+      return pane(title, true, "<div>" + d(empty) + "</div>", "nfull");
+    }
     var lines = S.newsFeed.map(function (n, i) { return "<div>" + d(String(i + 1).padStart(2) + " ") + esc(n) + "</div>"; });
     var start = clamp(S.newsOffset, 0, Math.max(0, lines.length - 1));
-    return pane(d("News — " + S.newsFeed.length + " headlines  (j/k scroll, esc close)"), true,
-      lines.slice(start, start + h).join(""), "nfull");
+    return pane(title, true, lines.slice(start, start + h).join(""), "nfull");
   }
 
   /* ---------------------------------------------------------------- themes */
@@ -1090,6 +1167,43 @@
   }
 
   /* ------------------------------------------------------------------ keys */
+
+  // TOP_VIEWS / BOTTOM_VIEWS are the tab bars, in key order. `[` / `]` wrap on
+  // their length, the way the Go wraps on topViewCount / bottomViewCount.
+  var TOP_VIEWS = ["branches", "prs"];              // keys 3, 4
+  var BOTTOM_VIEWS = ["graph", "changes", "output"]; // keys 5, 6, 7
+
+  // setTopView focuses the top slot and shows v. The number keys, `[`/`]`, right
+  // and enter-on-Repos all route through here so a tab can never be entered by
+  // one route with side effects another route skips.
+  function setTopView(v) {
+    S.focus = "branches";
+    if (v !== "prs") clearPRFilter(); // leaving the PRs sub-view drops its `/` filter
+    S.topView = v;
+  }
+
+  // setBottomView: same, plus the bottom slot's own side effects — a PR needle is
+  // meaningless down here, and Changes has to (re)load its files.
+  function setBottomView(v) {
+    S.focus = "bottom";
+    clearPRFilter();
+    S.bottomView = v;
+    if (v === "changes") { S.changeShowDiff = false; loadChanges(); }
+  }
+
+  // cycleTab moves the focused pane's tab bar by delta, wrapping. Repos and
+  // Scripts have no tab bar, so it is deliberately a no-op there rather than
+  // jumping somewhere the user didn't ask for — `tab` stays pane-cycling
+  // everywhere, which is why this lives on its own keys.
+  function cycleTab(delta) {
+    if (S.focus === "branches") {
+      var t = TOP_VIEWS.indexOf(S.topView), n = TOP_VIEWS.length;
+      setTopView(TOP_VIEWS[((t + delta) % n + n) % n]);
+    } else if (S.focus === "bottom") {
+      var b = BOTTOM_VIEWS.indexOf(S.bottomView), m = BOTTOM_VIEWS.length;
+      setBottomView(BOTTOM_VIEWS[((b + delta) % m + m) % m]);
+    }
+  }
 
   function clearPRFilter() {
     if (S.filterPanel === "prs") { S.filter = ""; S.filterPanel = "repos"; S.prCursor = 0; }
@@ -1127,6 +1241,21 @@
   // different repo. Reloading regardless would be worse than wasteful: it resets
   // graphSel/graphOffset and changeShowDiff, so a reshuffle that moved nothing
   // would still collapse an open diff and scroll the graph back to the top.
+  // Port of Model.reclampCursor (update.go). The Go funnels every status change
+  // through statusMsg and re-clamps there; the demo mutates the fixture inline,
+  // so each mutating key calls this itself with the path it was on beforehand.
+  // Without it, pushing/syncing/discarding the highlighted repo under `F` (or a
+  // `/needle` that matches on branch) drops its row out from under the cursor:
+  // the cursor either dangles past the end or silently addresses a repo the
+  // panels aren't showing.
+  function reclampCursor(was) {
+    var vis = visibleRepos();
+    if (S.cursor >= vis.length) S.cursor = vis.length - 1;
+    if (S.cursor < 0) S.cursor = 0;
+    var cur = curRepo();
+    if (cur && cur.path !== was) loadContext();
+  }
+
   function keepCursorOn(path) {
     S.cursor = 0;
     var vis = visibleRepos();
@@ -1189,10 +1318,15 @@
   function checkoutSelected() {
     var vb = visibleBranches(), r = curRepo();
     if (!r || S.focus !== "branches" || S.branchCursor >= vb.length) return;
-    if (r.dirty > 0) { setStatus(og("checkout skipped: dirty working tree")); return; }
+    if (stDirty(r) > 0) { setStatus(og("checkout skipped: dirty working tree")); return; }
     var name = vb[S.branchCursor].name.replace(/^origin\//, ""); // Branch.LocalName()
     r.b = name;
     loadContext(); // checkoutDoneMsg batches loadContextCmd — graph and Changes must follow
+    // The branch is half of what `/` matches on (repoHaystack), so a checkout can
+    // drop this very repo out of an active filter — `/main` then checking out
+    // feat/x is exactly that. The Go re-clamps for free, because checkoutDoneMsg
+    // batches statusCmd and the resulting statusMsg runs reclampCursor.
+    reclampCursor(r.path);
     setStatus(gr("checked out " + name + " in " + r.n));
   }
 
@@ -1202,7 +1336,7 @@
     var pr = prs[S.prCursor];
     var target = discovered().filter(function (r) { return r.n === pr.repo; })[0];
     if (!target) { setStatus(og("PR repo " + pr.repo + " is not in view")); return; }
-    if (target.dirty > 0) { setStatus(og("checkout skipped: dirty working tree in " + target.n)); return; }
+    if (stDirty(target) > 0) { setStatus(og("checkout skipped: dirty working tree in " + target.n)); return; }
     // focusRepoByPath: land on that repo's Branches, ready to review. Note
     // topView flips back to Branches — the fix from TestTUI_PRCheckoutLandsOnBranches.
     target.b = "pr-" + pr.num;
@@ -1218,7 +1352,10 @@
   function armDiscard(full) {
     var r = curRepo();
     if (!r) return;
-    if (r.dirty === 0) { setStatus(esc("nothing to discard in " + r.n)); return; }
+    // Go: `if r.loaded && r.status.DirtyCount == 0`. The loaded conjunct matters —
+    // on an unloaded repo we don't know yet, so the confirm arms rather than
+    // refusing. Dropping it inverts the behaviour during boot.
+    if (r.loaded && r.dirty === 0) { setStatus(esc("nothing to discard in " + r.n)); return; }
     S.confirmDiscard = true; S.confirmFull = full; S.confirmName = r.n;
     setStatus(rd(full
       ? "discard " + r.n + " + untracked files?  y = confirm, any key = cancel"
@@ -1247,6 +1384,11 @@
     else { S.cursor = 0; loadContext(); }
   }
 
+  // The demo's `q` divergence: the Go quits from here, the browser can't. One
+  // string, used in every state the Go binds q — top level, the graph and news
+  // overlays, and the ?/, overlay — so the key never just swallows a press.
+  var QUIT_HINT = "q quits manygit — this is a browser demo, so it stays";
+
   function handleSettingsKey(k) {
     if (S.editingOpenCmd) {
       if (k === "Escape") S.editingOpenCmd = false;
@@ -1256,7 +1398,23 @@
       return;
     }
     var rows = settingRows();
-    if (k === "Tab" || k === "?") S.showKeys = !S.showKeys;
+    // each key toggles its OWN page: ? on the keys closes, ? on settings switches
+    // to the keys; , the other way round. tab just flips.
+    if (k === "q") setStatus(d(QUIT_HINT)); // Go: quits from the overlay
+    else if (k === "Tab") S.showKeys = !S.showKeys;
+    else if (k === "?") {
+      // A close owes the same preview cleanup as , and esc — see update.go.
+      if (S.showKeys) { applyTheme(S.theme); S.showHelp = false; }
+      else S.showKeys = true;
+    } else if (k === ",") {
+      if (S.showKeys) {
+        S.showKeys = false;
+        S.settingsCursor = Math.max(0, THEMES.indexOf(S.theme));
+      } else {
+        applyTheme(S.theme);
+        S.showHelp = false;
+      }
+    }
     else if (k === "Escape") { applyTheme(S.theme); S.showHelp = false; }
     else if ((k === "j" || k === "ArrowDown") && !S.showKeys) {
       S.settingsCursor = clamp(S.settingsCursor + 1, 0, rows.length - 1); previewSettings();
@@ -1284,7 +1442,7 @@
       S.confirmDiscard = false;
       if (k === "y") {
         var r = discovered().filter(function (x) { return x.n === S.confirmName; })[0];
-        if (r) { r.dirty = 0; delete WIP_FILES[r.n]; loadChanges(); }
+        if (r) { r.dirty = 0; delete WIP_FILES[r.n]; loadChanges(); reclampCursor(r.path); }
         setStatus(gr("discarded " + (S.confirmFull ? "all changes" : "tracked changes") + " in " + S.confirmName));
       } else setStatus(esc("discard cancelled"));
       return;
@@ -1293,20 +1451,25 @@
       if (k === "g" || k === "Escape") S.showGraph = false;
       else if (k === "j" || k === "ArrowDown") S.graphOffset = Math.min(S.graphOffset + 1, graph.length - 1);
       else if (k === "k" || k === "ArrowUp") S.graphOffset = Math.max(0, S.graphOffset - 1);
-      else if (k === "q") setStatus(d("q quits manygit — this is a browser demo"));
+      else if (k === "q") setStatus(d(QUIT_HINT));
       return;
     }
     if (S.showNews) {
       if (k === "n" || k === "Escape") S.showNews = false;
       else if (k === "j" || k === "ArrowDown") S.newsOffset = Math.min(S.newsOffset + 1, S.newsFeed.length - 1);
       else if (k === "k" || k === "ArrowUp") S.newsOffset = Math.max(0, S.newsOffset - 1);
+      else if (k === "q") setStatus(d(QUIT_HINT));
       return;
     }
 
     switch (k) {
       case "q":
-        setStatus(d("q quits manygit — this is a browser demo, so it stays")); break;
+        setStatus(d(QUIT_HINT)); break;
       case "?":
+        // ? is the universal "show me the keys" reflex — it lands on the
+        // keybindings, not a settings form. Settings has its own key (,).
+        S.showHelp = true; S.showKeys = true; break;
+      case ",":
         S.showHelp = true; S.showKeys = false;
         S.settingsCursor = Math.max(0, THEMES.indexOf(S.theme)); break;
       case "z": S.zoomed = !S.zoomed; break;
@@ -1324,11 +1487,13 @@
       }
       case "1": S.focus = "repos"; break;
       case "2": S.focus = "scripts"; break;
-      case "3": S.focus = "branches"; clearPRFilter(); S.topView = "branches"; break;
-      case "4": S.focus = "branches"; S.topView = "prs"; break;
-      case "5": S.focus = "bottom"; clearPRFilter(); S.bottomView = "graph"; break;
-      case "6": S.focus = "bottom"; clearPRFilter(); S.bottomView = "changes"; S.changeShowDiff = false; loadChanges(); break;
-      case "7": S.focus = "bottom"; clearPRFilter(); S.bottomView = "output"; break;
+      case "3": setTopView("branches"); break;
+      case "4": setTopView("prs"); break;
+      case "5": setBottomView("graph"); break;
+      case "6": setBottomView("changes"); break;
+      case "7": setBottomView("output"); break;
+      case "]": cycleTab(1); break;
+      case "[": cycleTab(-1); break;
       case "Tab": {
         var order = ["repos", "scripts", "branches", "bottom"];
         var at = order.indexOf(S.focus);
@@ -1341,7 +1506,7 @@
         break;
       }
       case "ArrowRight":
-        if (S.focus === "repos") { S.focus = "branches"; S.topView = "branches"; S.branchCursor = 0; }
+        if (S.focus === "repos") { setTopView("branches"); S.branchCursor = 0; }
         break;
       case "ArrowLeft":
         if (S.focus === "branches") S.focus = "repos";
@@ -1377,7 +1542,7 @@
           }
           break;
         }
-        if (S.focus === "repos") { S.focus = "branches"; S.topView = "branches"; clearPRFilter(); S.branchCursor = 0; break; }
+        if (S.focus === "repos") { setTopView("branches"); S.branchCursor = 0; break; }
         if (S.focus === "scripts") { runScript(); return; }
         if (S.focus === "branches" && S.topView === "prs") { checkoutPR(); break; }
         checkoutSelected();
@@ -1440,16 +1605,21 @@
       case "s": {
         var rs = curRepo();
         if (!rs) break;
-        if (!rs.remote) setStatus(og("sync " + rs.n + " skipped: no remote"));
+        // Guard order is the Go's (update.go `case "s"`): not-loaded first, then
+        // no-remote, then dirty. Until status lands we don't know if there's a
+        // remote, so skipping beats syncing blind.
+        if (!rs.loaded) setStatus(og("sync " + rs.n + " skipped: status not loaded yet"));
+        else if (!rs.remote) setStatus(og("sync " + rs.n + " skipped: no remote"));
         else if (rs.dirty > 0) setStatus(og("sync " + rs.n + " skipped: dirty working tree"));
-        else { rs.behind = 0; setStatus(gr("synced " + rs.n)); }
+        else { rs.behind = 0; setStatus(gr("synced " + rs.n)); reclampCursor(rs.path); }
         break;
       }
       case "p": {
         var rp = curRepo();
         if (!rp) break;
-        if (!rp.remote) setStatus(og("push " + rp.n + " skipped: no remote"));
-        else { rp.ahead = 0; setStatus(gr("pushed " + rp.n)); }
+        if (!rp.loaded) setStatus(og("push " + rp.n + " skipped: status not loaded yet"));
+        else if (!rp.remote) setStatus(og("push " + rp.n + " skipped: no remote"));
+        else { rp.ahead = 0; setStatus(gr("pushed " + rp.n)); reclampCursor(rp.path); }
         break;
       }
       case "d": armDiscard(false); break;

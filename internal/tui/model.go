@@ -33,17 +33,19 @@ const (
 type topView int
 
 const (
-	tvBranches topView = iota // key 3
-	tvPRs                     // key 4
+	tvBranches   topView = iota // key 3
+	tvPRs                       // key 4
+	topViewCount                // number of tabs in the top slot; `[` / `]` wrap on it
 )
 
 // bottomView is which view the multi-view bottom-right slot shows.
 type bottomView int
 
 const (
-	bvGraph   bottomView = iota // key 5
-	bvChanges                   // key 6
-	bvOutput                    // key 7
+	bvGraph         bottomView = iota // key 5
+	bvChanges                         // key 6
+	bvOutput                          // key 7
+	bottomViewCount                   // number of tabs in the bottom slot; `[` / `]` wrap on it
 )
 
 // repoVM is the per-repo view model.
@@ -227,7 +229,7 @@ func (m Model) visiblePRs() []gh.PullRequest {
 }
 
 // New builds a Model from discovered repos and scripts. root is the directory
-// they were found under — the `?` screen's scan-depth setting re-walks it.
+// they were found under — the `,` settings screen's scan-depth setting re-walks it.
 func New(cfg config.Config, root string, repos []discover.Repo, scripts []discover.Script) Model {
 	vms := make([]*repoVM, len(repos))
 	for i, r := range repos {

@@ -52,10 +52,12 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `4` | PRs — a tab beside Branches (top-right) |
 | `5` `6` `7` | bottom slot: Graph / Changes / Output |
 | `tab` / `shift+tab` | cycle the panes forwards / backwards |
+| `[` / `]` | cycle the focused pane's tabs (3⇄4, 5→6→7) — the numbers still jump straight there |
 | `j` `k` | move within the focused panel |
 | `→` `←` | hop between Repos and Branches |
 | `m` | in the PRs tab: toggle *my PRs* ⇄ *review requests* |
 | `enter` | Repos → view branches · Branches → checkout · Scripts → run · PRs → checkout the PR's branch |
+| `b` | checkout the highlighted branch — what `enter` does in Branches, from any pane |
 | `s` / `p` | sync (fetch + ff-pull) / push the highlighted repo |
 | `d` / `D` | discard changes (confirm): `d` tracked only · `D` also deletes untracked files |
 | `f` / `r` | fetch one / refetch all |
@@ -67,13 +69,14 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `o` | open the repo in your editor |
 | `z` | zoom the focused pane |
 | `esc` | back out one layer of state: the diff, then Changes, then zoom, then the `/` and `F` filters |
-| `?` | settings & help (themes, AI harness, scan depth, glyphs, editor) |
+| `?` | keybindings & the status legend |
+| `,` | settings (themes, AI harness, news window, scan depth, glyphs, editor) |
 | `q` | quit |
 
 Status column: `ok` up to date · `↑N` ahead · `↓N` behind · `*N` dirty ·
 `no-remote` local-only repo (never pushed anywhere — `s`/`p` skip it) · `!` the
 branch has no upstream, or git errored. Set `status_glyphs: ascii` (in config or
-`?`) if the arrows misalign.
+`,`) if the arrows misalign.
 
 ## GitHub PRs (tab `4`, beside Branches)
 
@@ -99,16 +102,16 @@ hint and the top-bar/footer GitHub bits are omitted.
 
 ## Config (optional)
 
-`~/.config/manygit/config.yml` (also written by the `?` screen):
+`~/.config/manygit/config.yml` (also written by the `,` settings screen):
 
 ```yaml
-max_depth: 3            # folders below the root to search for repos (1–5 in `?`)
+max_depth: 3            # folders below the root to search for repos (1–5 in `,`)
 open_cmd: code          # `o` runs this in the repo: code | cursor | code -r | code .
 theme: default          # default | serika_dark | dracula | nord | catppuccin | 8008
 status_glyphs: unicode  # or "ascii"
 ```
 
-`max_depth` is also a setting in `?` — picking a depth re-walks the tree straight
+`max_depth` is also a setting in `,` — picking a depth re-walks the tree straight
 away, no restart. A depth with no repos under it is refused (manygit won't start
 on an empty tree, so it won't drop you into one either) and you keep the depth you
 had.

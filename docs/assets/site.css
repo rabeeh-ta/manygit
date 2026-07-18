@@ -1014,6 +1014,24 @@ a.chip:hover {
   color: var(--muted);
 }
 
+/* The ? / , overlay body is centred both ways inside the full-screen pane, the
+   way the Go's overlayBox lipgloss.Place's it. The block centres as a unit, so
+   the columns inside keep their own alignment. */
+.overlay {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: start;
+}
+
+/* the , settings list, two columns — same split as the Go's settingsBody */
+.scols {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0 32px;
+  align-items: start;
+}
+
 /* keybindings reference inside the demo's ? overlay */
 .kcols {
   display: grid;

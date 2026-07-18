@@ -64,7 +64,8 @@ Actions apply to the repo under the `>` cursor.
 - `g` / `n` — full-screen commit graph / full-screen news feed
 - `m` — in the PRs pane, toggle your PRs and review requests
 - `o` / `z` — open the repo in your editor / zoom the focused pane
-- `?` — settings and help
+- `?` — the keybindings and the status legend
+- `,` — settings (theme, AI harness, news window, scan depth, glyphs, editor)
 - `q` — quit
 
 ## Status column
@@ -86,7 +87,7 @@ Actions apply to the repo under the `>` cursor.
   commits across every repo in English. Cached four hours.
 - Themes: `default`, `serika_dark`, `dracula`, `nord`, `catppuccin`, `8008`,
   adapted from monkeytype. Configurable in `~/.config/manygit/config.yml` or the
-  `?` screen.
+  `,` settings screen.
 
 ## Safety
 

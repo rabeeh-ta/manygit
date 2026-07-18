@@ -691,7 +691,7 @@ func (m Model) footer() string {
 		}
 	}
 	return styleDim.Render(
-		enter + " | z zoom | g graph | n news | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ? help | q quit")
+		enter + " | z zoom | g graph | n news | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ? keys | , settings | q quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -713,7 +713,10 @@ func (m Model) helpView() string {
 	return m.overlayBox(m.settingsBody())
 }
 
-// overlayBox wraps overlay content in a full-screen focused panel.
+// overlayBox wraps overlay content in a full-screen focused panel, centred both
+// ways. The body is a block of already-aligned lines — Place moves the block as a
+// unit, so the columns inside it stay aligned with each other while the block
+// itself sits in the middle instead of hugging the top-left of a full-screen box.
 func (m Model) overlayBox(body string) string {
 	tw, th := m.width, m.height
 	if tw <= 0 {
@@ -722,7 +725,12 @@ func (m Model) overlayBox(body string) string {
 	if th <= 0 {
 		th = minTermH
 	}
-	box := panelStyle(tw-2, th-2, true).Render(clampLines(body, th-2))
+	// panelStyle(w, h) sets the block size INCLUDING its Padding(0,1), so the
+	// content area is 2 cells narrower; the border adds one more on each side.
+	contentW, contentH := tw-4, th-2
+	centred := lipgloss.Place(contentW, contentH, lipgloss.Center, lipgloss.Center,
+		clampLines(body, contentH))
+	box := panelStyle(tw-2, th-2, true).Render(centred)
 	return lipgloss.NewStyle().MaxWidth(tw).Render(box)
 }
 
@@ -752,36 +760,47 @@ func (m Model) settingsBody() string {
 		case skTheme:
 			return styleGroup.Render("Theme") + styleDim.Render("   (previews live)")
 		case skHarness:
-			return styleGroup.Render("AI harness") + styleDim.Render("   (grayed = not installed)")
+			return styleGroup.Render("AI harness") + styleDim.Render("   (grey = not installed)")
 		case skNewsDays:
-			return styleGroup.Render("News window") + styleDim.Render("   (top-bar feed lookback)")
+			return styleGroup.Render("News window") + styleDim.Render("   (top-bar lookback)")
 		case skMaxDepth:
-			return styleGroup.Render("Scan depth") + styleDim.Render("   (folders below the root to search; rescans on select)")
+			return styleGroup.Render("Scan depth") + styleDim.Render("   (rescans on select)")
 		case skGlyph:
 			return styleGroup.Render("Ahead / behind glyphs")
 		default:
-			return styleGroup.Render("Editor") + styleDim.Render("   (`o` opens the repo — e.g. code, cursor, code -r)")
+			return styleGroup.Render("Editor") + styleDim.Render("   (`o` opens the repo)")
 		}
 	}
 
-	// Build the scrollable middle (group headers + option rows) and track the
-	// line the cursor is on, so we can window it to keep the cursor visible.
+	// Two columns, split at skMaxDepth. One column is 26 rows and needs a scroll
+	// at the documented 80x20 minimum; 15 + 11 side by side does not, so the whole
+	// list is visible at every supported size. settingRows() order is unchanged, so
+	// j/k still walks it top-to-bottom, left column then right.
 	defaultDepth := config.Default().MaxDepth // hoisted: this loop runs every render
-	var mid []string
+	var left, right []string
 	cursorLine := 0
 	prev := settingKind(-1)
 	for i, r := range settingRows() {
+		col := &left
+		if r.kind >= skMaxDepth {
+			col = &right
+		}
 		if r.kind != prev {
-			mid = append(mid, hdr(r.kind))
+			if len(*col) > 0 {
+				*col = append(*col, "") // air above every group but the column's first
+			}
+			*col = append(*col, hdr(r.kind))
 			prev = r.kind
 		}
 		cursor := m.settingsCursor == i
 		if cursor {
-			cursorLine = len(mid)
+			// JoinHorizontal aligns both columns at the top, so a row's index inside
+			// its own column IS its line in the joined block.
+			cursorLine = len(*col)
 		}
 		switch r.kind {
 		case skTheme:
-			mid = append(mid, line(cursor, radioMark(m.cfg.Theme == r.val), r.val))
+			*col = append(*col, line(cursor, radioMark(m.cfg.Theme == r.val), r.val))
 		case skHarness:
 			installed := harness.Available(r.val)
 			label := r.val
@@ -797,14 +816,14 @@ func (m Model) settingsBody() string {
 			if cursor && installed {
 				lbl = styleCursor.Render(label)
 			}
-			mid = append(mid, "   "+cur+mark+lbl)
+			*col = append(*col, "   "+cur+mark+lbl)
 		case skNewsDays:
 			d, _ := strconv.Atoi(r.val)
 			label := r.val + " days"
 			if d == 1 {
 				label = "1 day"
 			}
-			mid = append(mid, line(cursor, radioMark(m.cfg.NewsDays == d), label))
+			*col = append(*col, line(cursor, radioMark(m.cfg.NewsDays == d), label))
 		case skMaxDepth:
 			d, _ := strconv.Atoi(r.val)
 			label := r.val + " levels"
@@ -814,14 +833,14 @@ func (m Model) settingsBody() string {
 			if d == defaultDepth {
 				label += "  (default)"
 			}
-			mid = append(mid, line(cursor, radioMark(m.cfg.MaxDepth == d), label))
+			*col = append(*col, line(cursor, radioMark(m.cfg.MaxDepth == d), label))
 		case skGlyph:
 			label := "unicode  (arrows)"
 			if r.val == "ascii" {
 				label = "ascii    (+ / -)"
 			}
 			sel := (r.val == "unicode") == m.cfg.UnicodeGlyphs()
-			mid = append(mid, line(cursor, radioMark(sel), label))
+			*col = append(*col, line(cursor, radioMark(sel), label))
 		case skEditor:
 			val := m.cfg.OpenCmd
 			hint := ""
@@ -837,22 +856,55 @@ func (m Model) settingsBody() string {
 				ecur = styleCursor.Render("> ")
 				eval = styleCursor.Render(val)
 			}
-			mid = append(mid, "   "+ecur+eval+styleDim.Render(hint))
+			*col = append(*col, "   "+ecur+eval+styleDim.Render(hint))
 		}
 	}
-	// Window the middle to the space between the fixed title and footer.
+	// Window both columns together to the space between the fixed title and
+	// footer. They share start/end because JoinHorizontal aligns them at the top,
+	// so cursorLine indexes the joined block directly. At every supported size the
+	// columns already fit and this is a no-op — it only bites if the list grows.
 	th := m.height
 	if th <= 0 {
 		th = minTermH
 	}
-	avail := (th - 2) - 3 // box inner height minus title + blank + footer
+	avail := (th - 2) - 4 // box inner height minus title, blank, blank, footer
 	if avail < 1 {
 		avail = 1
 	}
-	start, end := window(len(mid), cursorLine, avail)
-	body := append([]string{styleTitle.Render("manygit — settings"), ""}, mid[start:end]...)
-	body = append(body, styleDim.Render("   j/k move · enter select · tab keybindings · esc close"))
-	return strings.Join(body, "\n")
+	n := len(left)
+	if len(right) > n {
+		n = len(right)
+	}
+	for len(left) < n {
+		left = append(left, "")
+	}
+	for len(right) < n {
+		right = append(right, "")
+	}
+	start, end := window(n, cursorLine, avail)
+	left, right = left[start:end], right[start:end]
+
+	// Pad the left column to a fixed width so the right one starts at a straight
+	// edge; ANSI-aware, since every row carries colour.
+	const colGap = 4
+	leftW := 0
+	for _, ln := range left {
+		if w := lipgloss.Width(ln); w > leftW {
+			leftW = w
+		}
+	}
+	for i, ln := range left {
+		left[i] = ln + strings.Repeat(" ", max(0, leftW+colGap-lipgloss.Width(ln)))
+	}
+	cols := lipgloss.JoinHorizontal(lipgloss.Top, strings.Join(left, "\n"), strings.Join(right, "\n"))
+
+	body := []string{styleTitle.Render("manygit — settings") + styleDim.Render("   (,)"), ""}
+	body = append(body, strings.Split(cols, "\n")...)
+	body = append(body, "", styleDim.Render("j/k move · enter select · tab keys · esc close"))
+	// Left-join first: it pads every line to the block width, so the title and
+	// footer keep a straight left edge with the columns instead of each being
+	// centred on its own by overlayBox's Place.
+	return lipgloss.JoinVertical(lipgloss.Left, body...)
 }
 
 // keysBody is the two-column keybinding + status-legend reference (two columns so
@@ -871,7 +923,7 @@ func (m Model) keysBody() string {
 		up, down = "↑", "↓"
 	}
 	head := []string{
-		styleTitle.Render("manygit — keybindings") + styleDim.Render("   (tab: back to settings · esc close)"),
+		styleTitle.Render("manygit — keybindings") + styleDim.Render("   (tab or , for settings · esc close)"),
 		"",
 	}
 	left := []string{
@@ -881,6 +933,7 @@ func (m Model) keysBody() string {
 		kr("5/6/7", "bottom: Graph / Changes / Output"),
 		kr("tab", "cycle panels"),
 		kr("shift+tab", "cycle panels backwards"),
+		kr("[ ]", "cycle the focused pane's tabs"),
 		kr("z", "zoom the focused pane full-screen"),
 		kr("j/k", "move in the focused panel"),
 		kr("left/right", "hop between Repos and Branches"),
@@ -911,6 +964,12 @@ func (m Model) keysBody() string {
 		kr("b/enter", "checkout selected branch"),
 		kr("d/D", "discard changes / +untracked (confirm)"),
 		kr("o", "open the repo in your editor"),
+		"",
+		styleGroup.Render("This screen"),
+		kr("?", "this page"),
+		kr(",", "settings (themes, harness, depth)"),
+		kr("tab", "flip keys <-> settings"),
+		kr("q", "quit manygit"),
 		"",
 		styleGroup.Render("Status column"),
 		kr(styleGreen.Render("ok"), "up to date with upstream"),

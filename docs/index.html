@@ -206,7 +206,8 @@
             <button class="key" type="button" data-key="g"><em>g</em> graph</button>
             <button class="key" type="button" data-key="n"><em>n</em> news</button>
             <button class="key" type="button" data-key="r"><em>r</em> refetch</button>
-            <button class="key" type="button" data-key="?"><em>?</em> settings</button>
+            <button class="key" type="button" data-key="?"><em>?</em> keys</button>
+            <button class="key" type="button" data-key=","><em>,</em> settings</button>
           </div>
         </div>
       </section>
@@ -307,6 +308,13 @@
                   <td>Cycle the panes. <b>shift+tab</b> cycles back</td>
                 </tr>
                 <tr>
+                  <td class="kt__k"><b>[</b> <b>]</b></td>
+                  <td>
+                    Cycle the focused pane's tabs — <b>3</b>⇄<b>4</b>, <b>5</b>→<b>6</b>→<b>7</b>.
+                    The numbers still jump straight to any of them
+                  </td>
+                </tr>
+                <tr>
                   <td class="kt__k"><b>j k</b></td>
                   <td>Move within the focused pane</td>
                 </tr>
@@ -319,6 +327,10 @@
                   <td>
                     Select: open a repo's branches, check one out, run a script, or check out a PR
                   </td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>b</b></td>
+                  <td>Check out the highlighted branch — what <b>enter</b> does in Branches</td>
                 </tr>
                 <tr>
                   <td class="kt__k"><b>s</b> / <b>p</b></td>
@@ -368,8 +380,16 @@
                   <td>Open the repo in your editor / zoom the focused pane</td>
                 </tr>
                 <tr>
-                  <td class="kt__k"><b>?</b> / <b>q</b></td>
-                  <td>Settings and help / quit</td>
+                  <td class="kt__k"><b>?</b></td>
+                  <td>The keybindings and the status legend — <b>tab</b> flips to settings</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>,</b></td>
+                  <td>Settings: themes, AI harness, news window, scan depth, glyphs, editor</td>
+                </tr>
+                <tr>
+                  <td class="kt__k"><b>q</b></td>
+                  <td>Quit</td>
                 </tr>
               </tbody>
             </table>
@@ -417,7 +437,7 @@
             </table>
             <p>
               If the arrows misalign in your terminal, switch to ASCII <code>+</code>/<code>-</code>
-              in the settings screen — press <b>?</b>, in the demo above too.
+              in the settings screen — press <b>,</b>, in the demo above too.
             </p>
           </div>
         </section>
@@ -471,7 +491,7 @@
           <h2 class="lane">Config</h2>
           <div class="sec__body">
             <p class="sec__lede">
-              Optional. The settings screen (<b>?</b>) writes this file for you.
+              Optional. The settings screen (<b>,</b>) writes this file for you.
             </p>
             <div class="cmd">
               <div class="cmd__txt" tabindex="0" role="group" aria-label="command, scrolls horizontally">
@@ -484,7 +504,7 @@
                   <td class="kt__k"><b>max_depth</b></td>
                   <td>
                     How many folders below the root to search for repos. Default <code>3</code>.
-                    Also a row in <b>?</b> — picking a depth re-walks the tree straight away, and a
+                    Also a row in <b>,</b> — picking a depth re-walks the tree straight away, and a
                     depth with no repos under it is refused rather than leaving you an empty list
                   </td>
                 </tr>
