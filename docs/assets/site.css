@@ -1101,7 +1101,7 @@ a.chip:hover {
   }
 }
 
-/* The [ v1.0.6 ] [ light ] [ github ] run needs 392px at desktop sizing, so it
+/* The [ v1.0.8 ] [ light ] [ github ] run needs 392px at desktop sizing, so it
    clears no phone. Buy the space back off the wordmark rather than dropping a
    chip — the three-chip run is the masthead. */
 @media (max-width: 430px) {

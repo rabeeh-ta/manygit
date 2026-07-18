@@ -53,7 +53,7 @@
         "downloadUrl": "https://github.com/rabeeh-ta/manygit/releases",
         "codeRepository": "https://github.com/rabeeh-ta/manygit",
         "programmingLanguage": "Go",
-        "softwareVersion": "1.0.6",
+        "softwareVersion": "1.0.8",
         "screenshot": "https://rabeeh-ta.github.io/manygit/assets/og.png",
         "description": "A lazygit-style terminal UI for a folder full of git repositories. Shows every repo underneath on one screen — ahead, behind, or dirty — and fetches, pulls, pushes and switches branches on the one under the cursor.",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -172,7 +172,7 @@
           <span class="bar" aria-hidden="true"><i></i><i></i><i></i></span>
           <span class="wordmark__txt">manygit</span>
         </a>
-        <span class="chip chip--ver">v1.0.6</span>
+        <span class="chip chip--ver">v1.0.8</span>
         <button class="chip chip--btn" type="button" id="mode" aria-live="polite">light</button>
         <a class="chip" href="https://github.com/rabeeh-ta/manygit">github</a>
       </div>
@@ -652,6 +652,38 @@
         Array.prototype.forEach.call(gate.querySelectorAll("[data-go]"), function (b) {
           b.addEventListener("click", function () { go(b.getAttribute("data-go")); });
         });
+      })();
+    </script>
+
+    <script>
+      /* Keep the version badge current without a build step: read the latest
+         release from the GitHub API and update the masthead chip (and the
+         JSON-LD softwareVersion, for crawlers that render JS). The hardcoded
+         v1.0.8 above is the instant, offline, rate-limited fallback — if this
+         fetch fails for any reason the baked-in value simply stays. Mirrors the
+         tool itself, which checks for a newer release on every launch. Plain GET,
+         no custom headers, so it's a simple CORS request with no preflight. */
+      (function () {
+        fetch("https://api.github.com/repos/rabeeh-ta/manygit/releases/latest")
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) {
+            if (!d || typeof d.tag_name !== "string") return;
+            if (!/^v?\d+\.\d+\.\d+([-.][0-9A-Za-z.]+)?$/.test(d.tag_name)) return; // ignore anything odd
+            var tag = d.tag_name.charAt(0) === "v" ? d.tag_name : "v" + d.tag_name;
+
+            var chip = document.querySelector(".chip--ver");
+            if (chip) chip.textContent = tag;
+
+            try {
+              var ld = document.querySelector('script[type="application/ld+json"]');
+              if (ld) {
+                var obj = JSON.parse(ld.textContent);
+                obj.softwareVersion = tag.slice(1); // JSON-LD carries the bare number
+                ld.textContent = JSON.stringify(obj, null, 2);
+              }
+            } catch (e) {}
+          })
+          .catch(function () {}); // offline / rate-limited / blocked: keep the fallback
       })();
     </script>
   </body>
