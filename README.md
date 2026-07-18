@@ -42,6 +42,10 @@ manygit --root ~/work   # scan a specific folder
 
 manygit walks the folder (depth 3) for git repos and groups them by parent.
 
+`manygit stats` prints public download counts from GitHub (total releases,
+all-time downloads split by OS, and the last 10 tags) — no auth, no telemetry,
+just aggregate numbers GitHub already keeps. Anyone can run it.
+
 ## Keys
 
 Actions apply to the **highlighted** repo (the `>` cursor).

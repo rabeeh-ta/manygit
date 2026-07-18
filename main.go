@@ -24,10 +24,31 @@ func main() {
 	root := flag.String("root", "", "directory to scan for repos (default: $MANYGIT_ROOT or cwd)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	noUpdate := flag.Bool("no-update-check", false, "skip the check for a newer release on launch")
+	flag.Usage = func() {
+		w := flag.CommandLine.Output()
+		fmt.Fprint(w, `manygit — a lazygit-style TUI for a whole tree of git repos
+
+Usage:
+  manygit                 launch the TUI, scanning the current directory
+  manygit --root <dir>    launch scanning a specific folder
+  manygit stats           print public download counts (no auth, no telemetry)
+
+Flags:
+`)
+		flag.PrintDefaults()
+		fmt.Fprint(w, "\nMore: https://github.com/rabeeh-ta/manygit\n")
+	}
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println("manygit", version)
+		return
+	}
+
+	// `manygit stats` — public download counts from GitHub, no auth, no telemetry.
+	// Anyone can run it; it only reads aggregate numbers GitHub already keeps.
+	if flag.Arg(0) == "stats" {
+		printStats()
 		return
 	}
 
@@ -109,6 +130,28 @@ func maybeSelfUpdate(current string) {
 		fmt.Println("Please restart manygit to use the new version.")
 		os.Exit(0)
 	}
+}
+
+// printStats fetches the public GitHub download counts and prints a small table:
+// total releases, all-time binary downloads split by OS, and the last 10 tags.
+func printStats() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s, err := selfupdate.DownloadStats(ctx, 10)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "stats:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("manygit — public download stats\n\n")
+	fmt.Printf("  total releases       %d\n", s.TotalReleases)
+	fmt.Printf("  all-time downloads   %d   (linux %d · darwin %d)\n\n",
+		s.BinaryDownloads, s.ByOS["linux"], s.ByOS["darwin"])
+	fmt.Printf("  last %d releases\n", len(s.Recent))
+	for _, r := range s.Recent {
+		fmt.Printf("    %-9s %s   %5d\n", r.Tag, r.Date, r.Downloads)
+	}
+	fmt.Printf("\n  counts are binary (.tar.gz) downloads GitHub keeps per release;\n")
+	fmt.Printf("  installs and self-updates both count. no telemetry — public data.\n")
 }
 
 func resolveRoot(flagRoot, cfgRoot string) string {

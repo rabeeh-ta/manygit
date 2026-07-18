@@ -42,8 +42,9 @@ type Release struct {
 
 // Asset is one uploaded release file.
 type Asset struct {
-	Name string `json:"name"`
-	URL  string `json:"browser_download_url"`
+	Name          string `json:"name"`
+	URL           string `json:"browser_download_url"`
+	DownloadCount int    `json:"download_count"`
 }
 
 // Latest fetches the newest published release. ctx should carry a short timeout.
@@ -98,6 +99,102 @@ func Releases(ctx context.Context, n int) ([]Release, error) {
 		return nil, err
 	}
 	return rs, nil
+}
+
+// Stats is the public download picture for `manygit stats`: aggregate counts
+// GitHub keeps on each release asset. Nothing is collected from anyone — these
+// are read from the public releases API.
+type Stats struct {
+	TotalReleases   int            // every published release
+	BinaryDownloads int            // .tar.gz downloads (installs + self-updates), not checksums
+	ByOS            map[string]int // "linux" / "darwin" -> binary downloads
+	Recent          []ReleaseStat  // newest first, len <= the requested count
+}
+
+// ReleaseStat is one release's binary download total.
+type ReleaseStat struct {
+	Tag       string
+	Date      string // YYYY-MM-DD
+	Downloads int
+}
+
+// DownloadStats fetches every release and aggregates the counts. recent caps how
+// many releases the Recent slice details; the totals cover all of them. Counts
+// only the platform binaries (.tar.gz) — checksums.txt is a verification file, so
+// including it would make the OS split not add up to the total.
+func DownloadStats(ctx context.Context, recent int) (Stats, error) {
+	rs, err := allReleases(ctx)
+	if err != nil {
+		return Stats{}, err
+	}
+	return aggregate(rs, recent), nil
+}
+
+// aggregate is the pure core of DownloadStats — no network, so it's unit-tested.
+func aggregate(rs []Release, recent int) Stats {
+	s := Stats{TotalReleases: len(rs), ByOS: map[string]int{}}
+	for i, r := range rs {
+		relTotal := 0
+		for _, a := range r.Assets {
+			if !strings.HasSuffix(a.Name, ".tar.gz") {
+				continue
+			}
+			relTotal += a.DownloadCount
+			s.BinaryDownloads += a.DownloadCount
+			switch {
+			case strings.Contains(a.Name, "darwin"):
+				s.ByOS["darwin"] += a.DownloadCount
+			case strings.Contains(a.Name, "linux"):
+				s.ByOS["linux"] += a.DownloadCount
+			}
+		}
+		if i < recent {
+			s.Recent = append(s.Recent, ReleaseStat{
+				Tag: r.Tag, Date: shortDate(r.PublishedAt), Downloads: relTotal,
+			})
+		}
+	}
+	return s
+}
+
+func shortDate(iso string) string {
+	if len(iso) >= 10 {
+		return iso[:10]
+	}
+	return iso
+}
+
+// allReleases pages through every published release (100 per page) so the totals
+// are genuinely all-time, not just the first page.
+func allReleases(ctx context.Context) ([]Release, error) {
+	var all []Release
+	for page := 1; page <= 50; page++ { // 50*100 = 5000, a hard stop far above reality
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=100&page=%d", repo, page), nil)
+		if err != nil {
+			return all, err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return all, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return all, fmt.Errorf("github api: %s", resp.Status)
+		}
+		var rs []Release
+		err = json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&rs)
+		resp.Body.Close()
+		if err != nil {
+			return all, err
+		}
+		all = append(all, rs...)
+		if len(rs) < 100 {
+			break
+		}
+	}
+	return all, nil
 }
 
 // assetName is the archive name goreleaser produces for an os/arch pair, e.g.
