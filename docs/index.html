@@ -95,6 +95,74 @@
   </head>
 
   <body>
+    <!-- Mobile gate. On a phone the ENTIRE site steps aside for this: manygit is
+         a keyboard TUI and the demo wants 720px it won't get here, so the whole
+         page is a joke wall with a way through to a stripped, read-only pitch.
+         No TUI counterpart — it's a fact about the browser, not the tool. Shown
+         by CSS (assets/site.css) so the message survives with JS off; the gate
+         script at the end of <body> advances the steps and makes the rest of the
+         page inert. -->
+    <div id="mgate" data-step="wall">
+      <div class="mg-card">
+        <div class="mg-brand" aria-hidden="true">
+          <span class="bar"><i></i><i></i><i></i></span>
+          <span class="wordmark__txt">manygit</span>
+        </div>
+
+        <!-- 1 · the wall -->
+        <section class="mg-screen" data-when="wall">
+          <p class="mg-term">
+            <span class="mg-sigil">$</span> manygit<span class="mg-cur" aria-hidden="true"></span>
+          </p>
+          <p class="mg-out">error: no terminal here — that's a phone in your hand.</p>
+          <h1 class="mg-h" tabindex="-1">it's a command-line tool.</h1>
+          <p class="mg-p">
+            manygit lives in a terminal — a real keyboard, a wide screen, a computer that isn't also
+            a phone. there's honestly nothing for you to do on this screen.
+          </p>
+          <div class="mg-actions">
+            <button class="mg-btn" type="button" data-go="sure">
+              i know. show me anyway <span aria-hidden="true">→</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- 2 · are you sure -->
+        <section class="mg-screen" data-when="sure">
+          <p class="mg-term"><span class="mg-sigil">$</span> manygit --anyway</p>
+          <h1 class="mg-h" tabindex="-1">are you sure?</h1>
+          <p class="mg-p">
+            the demo won't run down here — it needs the keys, and your screen is made of glass. you'd
+            be reading about a keyboard app with no keyboard. but it's your data plan.
+          </p>
+          <div class="mg-actions">
+            <button class="mg-btn" type="button" data-go="in">
+              yes, i've made worse calls <span aria-hidden="true">→</span>
+            </button>
+            <button class="mg-btn mg-btn--ghost" type="button" data-go="wall">no, you're right</button>
+          </div>
+        </section>
+
+        <!-- 3 · fine, the pitch -->
+        <section class="mg-screen" data-when="in">
+          <p class="mg-term"><span class="mg-sigil">$</span> manygit --tell-me-anyway</p>
+          <h1 class="mg-h" tabindex="-1">fine. the whole pitch:</h1>
+          <p class="mg-p">
+            manygit is a lazygit-style TUI for a folder full of git repos. point it at a directory
+            and every repo underneath lands on one screen — its branch, and whether it's
+            <em>ahead</em>, <em>behind</em>, or <em>dirty</em>. then fetch, pull, push, or switch
+            branches on the one under the cursor, without cd-ing around.
+          </p>
+          <p class="mg-p mg-p--dim">
+            that's it. i'm not printing the install command down here — you can't paste it into a
+            terminal you're not holding. so go open manygit on a real computer (the kind with a
+            keyboard), like i already told you.
+          </p>
+          <p class="mg-sign">— see you on a bigger screen.</p>
+        </section>
+      </div>
+    </div>
+
     <a class="skip" href="#install">Skip to install</a>
 
     <!-- ------------------------------------------------------- masthead -- -->
@@ -551,5 +619,40 @@
     </footer>
 
     <script src="assets/demo.js"></script>
+
+    <script>
+      /* Mobile gate (SITE ONLY — no TUI counterpart). The interstitial shows via
+         CSS so its message survives with JS off; this advances the steps and
+         marks the rest of the page `inert` on a phone, so no stray focus reaches
+         the covered demo and no screen reader reads the hidden site. The content
+         stays in the DOM either way, so crawlers still index every word. */
+      (function () {
+        var gate = document.getElementById("mgate");
+        if (!gate) return;
+        var mq = window.matchMedia("(max-width: 720px), (hover: none) and (max-width: 900px)");
+
+        function syncInert() {
+          var on = mq.matches;
+          Array.prototype.forEach.call(document.body.children, function (n) {
+            if (n === gate || n.tagName === "SCRIPT") return;
+            if (on) n.setAttribute("inert", "");
+            else n.removeAttribute("inert");
+          });
+        }
+        if (mq.addEventListener) mq.addEventListener("change", syncInert);
+        else if (mq.addListener) mq.addListener(syncInert); // older Safari
+        syncInert();
+
+        function go(step) {
+          gate.setAttribute("data-step", step);
+          gate.scrollTop = 0;
+          var h = gate.querySelector('.mg-screen[data-when="' + step + '"] .mg-h');
+          if (h) h.focus(); // move the screen reader + keyboard onto the new message
+        }
+        Array.prototype.forEach.call(gate.querySelectorAll("[data-go]"), function (b) {
+          b.addEventListener("click", function () { go(b.getAttribute("data-go")); });
+        });
+      })();
+    </script>
   </body>
 </html>

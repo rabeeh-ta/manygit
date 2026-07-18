@@ -1137,3 +1137,174 @@ a.chip:hover {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------- mobile gate -- */
+
+/* manygit is a keyboard-driven TUI, and the demo above needs 720px of width and
+   a real keyboard to be anything but a screenshot. So on a phone the ENTIRE site
+   steps aside for a full-screen interstitial — a joke, then (if you insist) a
+   stripped read-only pitch. There is no counterpart in the Go: this is a fact
+   about the browser you're holding, not about the tool.
+
+   Shown by CSS alone so the message survives with JS off. The real page stays in
+   the DOM behind it (crawlers still read every word); the gate script marks it
+   `inert` so it also leaves the a11y tree and the tab order. Only tokens already
+   proven AA on both grounds are used here — --ink, --muted, --accent — so all
+   twelve palettes clear contrast with no new measurements. */
+
+#mgate {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: none; /* the media query below is the only thing that shows it */
+  overflow-y: auto;
+  background: var(--bg);
+  color: var(--ink);
+  padding: clamp(28px, 8vh, 56px) 22px;
+  font-family: var(--mono);
+  line-height: 1.55;
+}
+
+@media (max-width: 720px), (hover: none) and (max-width: 900px) {
+  html,
+  body {
+    overflow: hidden; /* the overlay owns the viewport; nothing scrolls behind */
+  }
+  #mgate {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.mg-card {
+  width: 100%;
+  max-width: 31rem;
+  margin: auto; /* scroll-safe centring when a step is taller than the viewport */
+}
+
+.mg-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: clamp(28px, 6vh, 44px);
+}
+.mg-brand .wordmark__txt {
+  font-family: var(--display);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+/* one screen at a time, keyed off #mgate[data-step] */
+.mg-screen {
+  display: none;
+}
+#mgate[data-step="wall"] .mg-screen[data-when="wall"],
+#mgate[data-step="sure"] .mg-screen[data-when="sure"],
+#mgate[data-step="in"] .mg-screen[data-when="in"] {
+  display: block;
+}
+
+.mg-term {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 4px;
+  word-break: break-word;
+}
+.mg-sigil {
+  color: var(--accent);
+}
+.mg-cur {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: mg-blink 1.15s steps(1) infinite; /* reduced-motion rule stills it */
+}
+@keyframes mg-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.mg-out {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 22px;
+}
+
+.mg-h {
+  font-size: clamp(23px, 6.5vw, 29px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0 0 14px;
+}
+.mg-h:focus {
+  outline: none; /* focused only to reposition the screen reader after a tap */
+}
+
+.mg-p {
+  font-size: 15px;
+  color: var(--muted);
+  margin: 0 0 16px;
+  max-width: 34ch;
+}
+.mg-p em {
+  color: var(--ink);
+  font-style: normal; /* emphasis by colour, not italics, in a mono face */
+}
+.mg-p--dim {
+  font-size: 13.5px;
+}
+.mg-sign {
+  font-size: 13.5px;
+  color: var(--muted);
+  margin: 26px 0 0;
+}
+
+.mg-actions {
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+.mg-btn {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--bg); /* symmetric with --accent-on-bg, so this clears AA too */
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 13px 18px;
+  cursor: pointer;
+  text-align: left;
+  transition: filter var(--t);
+}
+.mg-btn:hover {
+  filter: brightness(1.07);
+}
+.mg-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mg-btn--ghost {
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+  font-weight: 500;
+  padding: 8px 2px;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.mg-btn--ghost:hover {
+  filter: none;
+  color: var(--ink);
+}
