@@ -136,6 +136,13 @@ type newsDebounceMsg struct {
 	gen int
 }
 
+// ctxDebounceMsg fires ctxSettle after a repo-cursor move that arrived mid-sweep;
+// only the latest one (matching gen) actually loads the highlighted repo's
+// context, so holding j collapses into a single load instead of one per row.
+type ctxDebounceMsg struct {
+	gen int
+}
+
 // graphMsg carries the colored graph lines plus commit entries for the graph view.
 type graphMsg struct {
 	path    string

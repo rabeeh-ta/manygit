@@ -59,6 +59,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.newsDebounce++
 		cmds = append(cmds, newsDebounceCmd(m.newsDebounce))
 		return m, tea.Batch(cmds...)
+	case ctxDebounceMsg:
+		// Drop a superseded tick — a later move already scheduled its own, and
+		// bubbletea gives no way to cancel the one this came from.
+		if msg.gen != m.ctxGen || !m.ctxPending {
+			return m, nil
+		}
+		m.ctxPending = false
+		return m, m.loadContextCmd()
 	case newsDebounceMsg:
 		if msg.gen == m.newsDebounce {
 			return m, m.maybeRefreshNews()
@@ -326,6 +334,39 @@ func (m Model) loadTagsCmd() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// ctxSettle is how long the repo cursor must sit still before a move counts as
+// deliberate rather than part of a key-repeat sweep. Key autorepeat delivers
+// every ~30ms, so this comfortably spans a burst while staying under the ~100ms
+// that reads as instant when you stop on a row.
+const ctxSettle = 120 * time.Millisecond
+
+// ctxDebounceCmd schedules a context load ctxSettle from now; a later move
+// supersedes it by bumping ctxGen, so only the final one of a sweep loads.
+func ctxDebounceCmd(gen int) tea.Cmd {
+	return tea.Tick(ctxSettle, func(time.Time) tea.Msg { return ctxDebounceMsg{gen: gen} })
+}
+
+// contextCmd is loadContextCmd for moves the user drives continuously — the
+// repo cursor (j/k) and typing a repo filter, both of which re-pick the
+// highlighted repo on every keystroke.
+//
+// A move that lands after a quiet gap is deliberate, so it loads immediately and
+// navigation stays instant. A move that lands mid-sweep only schedules a load
+// and supersedes whatever was already pending, so running down 30 rows costs one
+// load at the start and one when you stop, not one per row.
+func (m *Model) contextCmd() tea.Cmd {
+	now := time.Now()
+	quiet := now.Sub(m.lastCtxAt) >= ctxSettle
+	m.lastCtxAt = now
+	m.ctxGen++ // supersede any tick already in flight, whichever branch we take
+	if quiet {
+		m.ctxPending = false
+		return m.loadContextCmd()
+	}
+	m.ctxPending = true
+	return ctxDebounceCmd(m.ctxGen)
+}
+
 // loadContextCmd loads branches + the commit graph for the highlighted repo
 // (and refreshes the Changes view when it's the one on screen).
 func (m Model) loadContextCmd() tea.Cmd {
@@ -560,7 +601,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(vis)-1 {
 				m.cursor++
 				m.clearBranchFilter() // the branch filter belonged to the old repo
-				return m, m.loadContextCmd()
+				return m, m.contextCmd()
 			}
 		case panelBranches:
 			m.topScroll(1)
@@ -577,7 +618,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cursor > 0 {
 				m.cursor--
 				m.clearBranchFilter() // the branch filter belonged to the old repo
-				return m, m.loadContextCmd()
+				return m, m.contextCmd()
 			}
 		case panelBranches:
 			m.topScroll(-1)
@@ -824,8 +865,10 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.prCursor = 0
 		return m, nil
 	}
+	// Each keystroke re-picks the highlighted repo, so this debounces like a
+	// cursor sweep: typing "authoring" is nine repo changes, not nine reloads.
 	m.cursor = 0
-	return m, m.loadContextCmd()
+	return m, m.contextCmd()
 }
 
 // handleSettingsKey drives the settings/help overlay: j/k move through the

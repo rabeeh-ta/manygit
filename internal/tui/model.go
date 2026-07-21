@@ -112,6 +112,16 @@ type Model struct {
 	outputRunning bool
 	outputRun     int // bumped per run; stale msgs from a superseded run are dropped
 
+	// Debounced context loading. Moving the repo cursor loads the newly-highlighted
+	// repo's branches + graph, which is 2-3 git subprocesses — cheap once, but a
+	// held j through 30 repos fires 30 of them (all but the last discarded as
+	// stale) and buries the render loop. A move that lands after a quiet gap is
+	// deliberate and loads immediately; moves that land mid-sweep only schedule,
+	// and each supersedes the last. Same gen-counter idiom as newsDebounce.
+	ctxGen     int       // bumped per move; a tick with a stale gen is dropped
+	ctxPending bool      // a deferred load is scheduled and hasn't fired yet
+	lastCtxAt  time.Time // when the highlighted repo last changed
+
 	branches     []git.Branch
 	branchCursor int
 	scripts      []discover.Script

@@ -507,6 +507,34 @@
     if (S.branchCursor >= visibleBranches().length) S.branchCursor = 0;
     if (S.bottomView === "changes") loadChanges();
   }
+  // ctxSettle / contextCmd port update.go. In the Go each repo change costs 2-3
+  // git subprocesses (branches + `git log --graph --all`), so holding j down 30
+  // rows fired 30 loads and buried the render loop. A change that lands after a
+  // quiet gap is deliberate and loads now — a single press stays instant; one
+  // that lands mid-sweep only schedules, and each supersedes the last.
+  //
+  // The gen counter is kept rather than clearTimeout: bubbletea can't cancel a
+  // pending tea.Tick, so the Go has to drop superseded ticks by generation, and
+  // the port mirrors that rather than taking the browser's shortcut.
+  var ctxSettle = 120; // ms — matches ctxSettle in update.go
+  var ctxGen = 0, ctxPending = false, lastCtxAt = 0;
+
+  function contextCmd() {
+    var now = Date.now();
+    var quiet = now - lastCtxAt >= ctxSettle;
+    lastCtxAt = now;
+    ctxGen++; // supersede any timer already in flight, whichever branch we take
+    if (quiet) { ctxPending = false; loadContext(); return; }
+    ctxPending = true;
+    var gen = ctxGen;
+    setTimeout(function () {
+      if (gen !== ctxGen || !ctxPending) return; // a later move scheduled its own
+      ctxPending = false;
+      loadContext();
+      render();
+    }, ctxSettle);
+  }
+
   function loadChanges() {
     var r = curRepo();
     if (!r) { changeFiles = []; return; }
@@ -1374,7 +1402,7 @@
     if (S.filterPanel === "scripts") S.scriptCursor = 0;
     else if (S.filterPanel === "branches") S.branchCursor = 0;
     else if (S.filterPanel === "prs") S.prCursor = 0;
-    else { S.cursor = 0; loadContext(); }
+    else { S.cursor = 0; contextCmd(); } // typing re-picks the repo per keystroke
   }
 
   // The demo's `q` divergence: the Go quits from here, the browser can't. One
@@ -1506,7 +1534,7 @@
         break;
       case "j": case "ArrowDown":
         if (S.focus === "repos") {
-          if (S.cursor < visibleRepos().length - 1) { S.cursor++; clearBranchFilter(); loadContext(); }
+          if (S.cursor < visibleRepos().length - 1) { S.cursor++; clearBranchFilter(); contextCmd(); }
         } else if (S.focus === "branches") topScroll(1);
         else if (S.focus === "scripts") {
           if (S.scriptCursor < visibleScripts().length - 1) S.scriptCursor++;
@@ -1514,7 +1542,7 @@
         break;
       case "k": case "ArrowUp":
         if (S.focus === "repos") {
-          if (S.cursor > 0) { S.cursor--; clearBranchFilter(); loadContext(); }
+          if (S.cursor > 0) { S.cursor--; clearBranchFilter(); contextCmd(); }
         } else if (S.focus === "branches") topScroll(-1);
         else if (S.focus === "scripts") { if (S.scriptCursor > 0) S.scriptCursor--; }
         else bottomScroll(-1);
