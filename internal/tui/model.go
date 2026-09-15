@@ -93,6 +93,8 @@ type Model struct {
 	root  string
 	repos []*repoVM
 
+	lastEscape time.Time // consecutive Escape presses within doubleEscapeWindow quit
+
 	cursor int
 	focus  panel
 

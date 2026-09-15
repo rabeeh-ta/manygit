@@ -138,6 +138,7 @@ Actions apply to the repo under the `>` cursor.
   editor) on the other. `tab` / `shift+tab` / `[` / `]` switch faces; `?` or `esc`
   closes from either. Settings has no key of its own.
 - `q` — quit
+- `esc esc` — quit with two consecutive presses within 500 ms, from any screen; any other key resets the sequence
 
 ## Status column
 

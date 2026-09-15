@@ -1038,7 +1038,7 @@
     var enter = "enter branches";
     if (S.focus === "scripts") enter = "enter run";
     else if (S.focus === "branches") enter = S.topView === "prs" ? "enter checkout PR" : "enter checkout";
-    return d(enter + " | z zoom | g graph | n news | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ! shell | : ai | ? help | q quit");
+    return d(enter + " | z zoom | g graph | n news | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ! shell | : ai | ? help | q/esc esc quit");
   }
   function indicators() {
     var harnessOK = HARNESSES.some(function (h) { return h.name === S.harness && h.installed; });
@@ -1195,7 +1195,8 @@
       kr("tab / [ ]", "keys <-> settings"),
       kr("j/k", "scroll this page"),
       kr("esc", "close this overlay"),
-      kr("q", "quit manygit")
+      kr("q", "quit manygit"),
+      kr("esc esc", "quit within 500 ms; any other key resets")
     ];
     // The Go keeps "Graph -> Changes" at the foot of the LEFT column (view.go's
     // keysBody). It sits on the right here purely to balance the two columns: a
@@ -2174,7 +2175,20 @@
     })();
   }
 
+  var lastEscape = null;
   function handleKey(k) {
+    var now = performance.now();
+    if (k === "Escape") {
+      if (lastEscape !== null && now - lastEscape <= 500) {
+        lastEscape = null;
+        setStatus(d("esc esc quits manygit — this is a browser demo, so it stays"));
+        el.term.blur();
+        return;
+      }
+      lastEscape = now;
+    } else {
+      lastEscape = null;
+    }
     if (S.shellPrompting) { handleShellPromptKey(k); return; }
     if (S.aiPrompting) { handleAIPromptKey(k); return; }
     if (S.confirmPlan) { handlePlanConfirm(k); return; }
@@ -2418,10 +2432,12 @@
   var altKey = false;
 
   // idleEscape reports whether esc has nothing to do in the TUI right now. The
-  // real tool binds esc only to backing out of the Changes pane; everywhere else
-  // it is inert, so the demo spends that inert case on releasing the keyboard.
+  // demo keeps a single idle esc as its accessible keyboard exit. A second
+  // rapid esc after backing out of a layer mirrors the tool's quit shortcut.
   function idleEscape() {
-    if (S.filtering || S.showHelp || S.showGraph || S.showNews || S.confirmDiscard) return false;
+    if (S.filtering || S.showHelp || S.showGraph || S.showNews || S.confirmDiscard ||
+        S.shellPrompting || S.aiPrompting || S.confirmPlan) return false;
+    if (S.outputRunning && S.focus === "bottom" && S.bottomView === "output") return false;
     if (S.focus === "bottom" && S.bottomView === "changes") return false;
     // esc now peels zoom and the filters too — it may only release the keyboard
     // once there is genuinely nothing left in the TUI for it to undo.
@@ -2430,14 +2446,15 @@
   }
 
   function onKey(e) {
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) { lastEscape = null; return; }
 
     // THE ESCAPE HATCH. This widget swallows tab AND shift+tab (both cycle panes
     // in manygit), so without a way out a keyboard user is trapped — WCAG 2.1.2.
     // esc is the exit, but only when it would otherwise do nothing: inside the
     // Changes pane, or any overlay/filter/confirm, it keeps its real meaning and
     // the user can press it again once those are closed.
-    if (e.key === "Escape" && idleEscape()) {
+    if (e.key === "Escape" && (lastEscape === null || performance.now() - lastEscape > 500) && idleEscape()) {
+      lastEscape = null;
       e.preventDefault();
       el.term.blur();
       return;

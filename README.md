@@ -137,6 +137,7 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `esc` | back out one layer of state: the diff, then Changes, then zoom, then the `/` and `F` filters |
 | `?` | help — one overlay, two faces: the keybindings & status legend, and settings (themes, AI harness, news window, scan depth, glyphs, editor). `tab` / `shift+tab` / `[` / `]` switch faces; `?` or `esc` closes from either |
 | `q` | quit |
+| `esc esc` | quit with two consecutive presses within 500 ms, from any screen; any other key resets the sequence |
 
 Status column: `ok` up to date · `↑N` ahead · `↓N` behind · `*N` dirty ·
 `no-remote` local-only repo (never pushed anywhere — `s`/`p` skip it) · `!` the

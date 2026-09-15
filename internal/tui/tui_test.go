@@ -627,7 +627,7 @@ func TestTUI_GraphDrillDown(t *testing.T) {
 		t.Error("esc from the diff should return to the file list")
 	}
 	// esc: file list → graph
-	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	mm, _ = m.handleKeyAt(tea.KeyMsg{Type: tea.KeyEsc}, m.lastEscape.Add(doubleEscapeWindow+time.Millisecond))
 	m = mm.(Model)
 	if m.bottomView != bvGraph {
 		t.Error("esc from the file list should return to the graph")

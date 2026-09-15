@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -533,7 +534,12 @@ func TestTUI_EscPeelsOneLayerAtATime(t *testing.T) {
 	cfg, repos := twoRepos(t)
 	m := loadAll(t, New(cfg, "", repos, nil), 120, 40)
 	rk := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
-	esc := func(m Model) Model { mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc}); return mm.(Model) }
+	at := time.Now()
+	esc := func(m Model) Model {
+		at = at.Add(doubleEscapeWindow + time.Millisecond)
+		mm, _ := m.handleKeyAt(tea.KeyMsg{Type: tea.KeyEsc}, at)
+		return mm.(Model)
+	}
 
 	// stack up: filter, zoom, Changes, diff
 	for _, k := range []string{"/", "a", "l"} {

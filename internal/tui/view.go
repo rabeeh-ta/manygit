@@ -823,7 +823,7 @@ func (m Model) footer() string {
 		}
 	}
 	return styleDim.Render(
-		enter + " | z zoom | g graph | n news | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ! shell | : ai | ? help | q quit")
+		enter + " | z zoom | g graph | n news | t tags | F changed | s sync | p push | d/D discard | o open | r refetch | ! shell | : ai | ? help | q/esc esc quit")
 }
 
 func (m Model) statusOrFilterLine() string {
@@ -1297,6 +1297,7 @@ func (m Model) keysColumns() (leftCol, rightCol []string) {
 		kr("j/k", "scroll this page"),
 		kr("esc", "close this overlay"),
 		kr("q", "quit manygit"),
+		kr("esc esc", "quit within 500 ms; any other key resets"),
 		"",
 		styleGroup.Render("Status column"),
 		kr(styleGreen.Render("ok"), "up to date with upstream"),
