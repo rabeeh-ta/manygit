@@ -313,24 +313,49 @@ func (m Model) renderRow(idx int, r *repoVM, nameW int) string {
 func (m Model) renderRepoBody(d dims, height int) string {
 	// Build the grouped rows tracking the cursor's line, then window to `height`
 	// so the highlighted repo stays visible instead of running off the bottom.
-	var lines []string
-	cursorLine := 0
-	lastGroup := ""
-	for i, r := range m.visibleRepos() {
-		if r.repo.Group != lastGroup {
-			lines = append(lines, styleGroup.Render(r.repo.Group))
-			lastGroup = r.repo.Group
-		}
-		if i == m.cursor {
-			cursorLine = len(lines)
-		}
-		lines = append(lines, m.renderRow(i, r, d.nameW))
-	}
+	vis := m.visibleRepos()
+	entries, cursorLine := repoLines(vis, m.cursor)
 	if height < 1 {
 		height = 1
 	}
-	start, end := window(len(lines), cursorLine, height)
-	return strings.Join(lines[start:end], "\n")
+	start, end := window(len(entries), cursorLine, height)
+	lines := make([]string, 0, end-start)
+	for _, e := range entries[start:end] {
+		r := vis[e.repo]
+		if e.header {
+			lines = append(lines, styleGroup.Render(r.repo.Group))
+		} else {
+			lines = append(lines, m.renderRow(e.repo, r, d.nameW))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// repoLine is one line of the Repos pane: a group header, or a repo row. repo
+// indexes the visible list either way — for a header, it is the first repo of
+// the group it heads.
+type repoLine struct {
+	repo   int
+	header bool
+}
+
+// repoLines lays out the Repos pane before windowing: a header wherever the
+// group changes, then the repo's row. It also returns the cursor's line. Shared
+// by renderRepoBody and the mouse hit-test, so a click can only ever land on
+// the row that was drawn under it.
+func repoLines(vis []*repoVM, cursor int) (lines []repoLine, cursorLine int) {
+	lastGroup := ""
+	for i, r := range vis {
+		if r.repo.Group != lastGroup {
+			lines = append(lines, repoLine{repo: i, header: true})
+			lastGroup = r.repo.Group
+		}
+		if i == cursor {
+			cursorLine = len(lines)
+		}
+		lines = append(lines, repoLine{repo: i})
+	}
+	return lines, cursorLine
 }
 
 func (m Model) renderBranches(contentW, innerH int) string {
@@ -362,14 +387,11 @@ func (m Model) renderBranches(contentW, innerH int) string {
 // tabBar renders a "[N Name] | ..." bar for a multi-view slot: the active tab in
 // reverse-video, the rest dim, joined by dim "│" dividers, so every view is
 // discoverable. active is the index of the current tab.
-func tabBar(tabs []struct {
-	n    int
-	name string
-}, active int) string {
+func tabBar(tabs []tabDef, active int) string {
 	activeStyle := lipgloss.NewStyle().Reverse(true).Bold(true)
 	out := make([]string, len(tabs))
 	for i, v := range tabs {
-		text := fmt.Sprintf(" %d %s ", v.n, v.name)
+		text := v.text()
 		if i == active {
 			out[i] = activeStyle.Render(text)
 		} else {
@@ -411,26 +433,36 @@ func (m Model) overlayHead() []string {
 	}
 }
 
-// topTabs is the tab bar for the top-right slot: Branches (3) and PRs (4).
-func (m Model) topTabs() string {
-	return tabBar([]struct {
-		n    int
-		name string
-	}{{3, "Branches"}, {4, "PRs"}}, int(m.topView))
+// tabDef is one chip of a tab bar: its number key and its name.
+type tabDef struct {
+	n    int
+	name string
 }
 
-// bottomTabs is the tab bar for the bottom slot: Graph (5), Changes (6), Output
-// (7) — a "*" marks Output while a script runs.
-func (m Model) bottomTabs() string {
+// text is the chip as drawn, padding included. Its width is also the chip's
+// click target, so tabAt measures this and not the name.
+func (t tabDef) text() string { return fmt.Sprintf(" %d %s ", t.n, t.name) }
+
+// topTabList is the top-right slot's tabs, in topView order.
+func (m Model) topTabList() []tabDef {
+	return []tabDef{{3, "Branches"}, {4, "PRs"}}
+}
+
+// bottomTabList is the bottom slot's tabs, in bottomView order — a "*" marks
+// Output while a script runs.
+func (m Model) bottomTabList() []tabDef {
 	out := "Output"
 	if m.outputRunning {
 		out = "Output*"
 	}
-	return tabBar([]struct {
-		n    int
-		name string
-	}{{5, "Graph"}, {6, "Changes"}, {7, out}}, int(m.bottomView))
+	return []tabDef{{5, "Graph"}, {6, "Changes"}, {7, out}}
 }
+
+// topTabs is the tab bar for the top-right slot: Branches (3) and PRs (4).
+func (m Model) topTabs() string { return tabBar(m.topTabList(), int(m.topView)) }
+
+// bottomTabs is the tab bar for the bottom slot: Graph (5), Changes (6), Output (7).
+func (m Model) bottomTabs() string { return tabBar(m.bottomTabList(), int(m.bottomView)) }
 
 // topHint is a short, contextual action hint appended to the top-right slot's tab
 // bar while it's focused (ASCII only — it sits in the width-measured title).
@@ -1044,6 +1076,8 @@ func (m Model) settingsBody() string {
 			return styleGroup.Render("Scan depth") + styleDim.Render("   (rescans on select)")
 		case skGlyph:
 			return styleGroup.Render("Ahead / behind glyphs")
+		case skMouse:
+			return styleGroup.Render("Mouse") + styleDim.Render("   (off = terminal selects)")
 		default:
 			return styleGroup.Render("Editor") + styleDim.Render("   (`o` opens the repo)")
 		}
@@ -1116,6 +1150,13 @@ func (m Model) settingsBody() string {
 				label = "ascii    (+ / -)"
 			}
 			sel := (r.val == "unicode") == m.cfg.UnicodeGlyphs()
+			*col = append(*col, line(cursor, radioMark(sel), label))
+		case skMouse:
+			label := "on   (click + wheel)"
+			if r.val == "off" {
+				label = "off"
+			}
+			sel := (r.val == "on") == m.cfg.MouseEnabled()
 			*col = append(*col, line(cursor, radioMark(sel), label))
 		case skEditor:
 			val := m.cfg.OpenCmd
@@ -1315,6 +1356,14 @@ func (m Model) keysColumns() (leftCol, rightCol []string) {
 		kr(styleDim.Render("~ ."), "fetching / loading"),
 		kr(styleDim.Render("no-remote"), "local-only repo (no remote configured)"),
 		kr(styleRed.Render("!"), "branch has no upstream, or error"),
+		// Last, below the legend: at the 100x30 the tests pin, the legend has to
+		// fit the first page of the face, and the mouse hints are the easier of
+		// the two to find by scrolling.
+		"",
+		styleGroup.Render("Mouse") + styleDim.Render("   (? settings: on / off)"),
+		kr("click", "focus a pane, pick a row or tab"),
+		kr("wheel", "j/k in the pane under the pointer"),
+		kr("shift", "hold it to drag-select text"),
 	}
 	return left, right
 }
@@ -1592,7 +1641,8 @@ func (m Model) View() string {
 	if m.zoomed {
 		return m.zoomedView()
 	}
-	d := computeDims(m.width, m.height, m.showTagsInline)
+	ly := m.mainLayout()
+	d := ly.d
 	tw := m.width
 	if tw <= 0 {
 		tw = minTermW
@@ -1600,27 +1650,14 @@ func (m Model) View() string {
 	brand := styleTitle.Render("manygit") + "  "
 	title := brand + m.topBar(max(0, tw-lipgloss.Width(brand)))
 
-	// left column: Repos (large) over a small Scripts panel; the two share the
-	// column's total height, matching the right column.
-	scriptsInner := len(m.scripts)
-	if scriptsInner < 3 {
-		scriptsInner = 3
-	}
-	if maxS := (d.bodyH - 2) / 3; scriptsInner > maxS {
-		scriptsInner = maxS
-	}
-	reposInner := max((d.bodyH-2)-scriptsInner, 3)
+	reposInner, scriptsInner := ly.reposInner, ly.scriptsInner
 	reposPanel := titledPanel(1, "Repos", d.leftW, reposInner, m.focus == panelRepos,
 		lipgloss.NewStyle().MaxWidth(d.leftW-2).Render(clampLines(m.renderRepoBody(d, reposInner), reposInner)))
 	scriptsPanel := titledPanel(2, "Scripts", d.leftW, scriptsInner, m.focus == panelScripts,
 		clampLines(m.renderScripts(d.leftW-2, scriptsInner), scriptsInner))
 	left := lipgloss.JoinVertical(lipgloss.Left, reposPanel, scriptsPanel)
 
-	// right column: two stacked multi-view slots sharing the left panel's total
-	// height. Top = Branches (3) / PRs (4); bottom = Graph (5) / Changes (6) /
-	// Output (7). Each shows a tab bar so the other views are discoverable.
-	topInner := max((d.bodyH-2)*40/100, 3)
-	botInner := max((d.bodyH-2)-topInner, 3)
+	topInner, botInner := ly.topInner, ly.botInner
 	top := titledBarBox(m.topTabs()+m.topHint(), d.rightW, topInner, m.focus == panelBranches,
 		clampLines(m.renderTop(d.rightW-2, topInner), topInner))
 	bottom := titledBarBox(m.bottomTabs()+m.bottomHint(), d.rightW, botInner, m.focus == panelBottom,
@@ -1635,22 +1672,15 @@ func (m Model) View() string {
 // zoomedView renders just the focused pane, maximized to the whole screen (z).
 // Zoom follows focus, so switching panes (1..6) shows the new one full-screen.
 func (m Model) zoomedView() string {
-	tw, th := m.width, m.height
+	tw := m.width
 	if tw <= 0 {
 		tw = minTermW
-	}
-	if th <= 0 {
-		th = minTermH
 	}
 	title := styleTitle.Render("manygit") + "  " +
 		styleDim.Render(fmt.Sprintf("%d repos", len(m.repos))) +
 		styleDim.Render("   [zoom — z to restore]")
 
-	innerW := tw - 2                                   // panel inner (content + padding)
-	innerH := th - headerRows - footerRows - borderPad // panel inner height
-	if innerH < 3 {
-		innerH = 3
-	}
+	innerW, innerH := m.zoomInner()
 	contentW := innerW - 2 // content area (minus panel padding)
 
 	var panel string

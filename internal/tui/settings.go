@@ -16,6 +16,7 @@ const (
 	skNewsDays
 	skMaxDepth
 	skGlyph
+	skMouse
 	skEditor
 )
 
@@ -32,10 +33,10 @@ type settingRow struct {
 }
 
 // settingRows is the ordered list of selectable rows: every theme, every known
-// harness, the news-window options, the scan depths, the two glyph modes, then
-// the editor.
+// harness, the news-window options, the scan depths, the two glyph modes, mouse
+// on/off, then the editor.
 func settingRows() []settingRow {
-	rows := make([]settingRow, 0, len(themeList)+len(harness.All)+len(newsDayOptions)+len(maxDepthOptions)+3)
+	rows := make([]settingRow, 0, len(themeList)+len(harness.All)+len(newsDayOptions)+len(maxDepthOptions)+5)
 	for _, t := range themeList {
 		rows = append(rows, settingRow{skTheme, t.Name})
 	}
@@ -49,6 +50,7 @@ func settingRows() []settingRow {
 		rows = append(rows, settingRow{skMaxDepth, strconv.Itoa(d)})
 	}
 	rows = append(rows, settingRow{skGlyph, "unicode"}, settingRow{skGlyph, "ascii"})
+	rows = append(rows, settingRow{skMouse, "on"}, settingRow{skMouse, "off"})
 	rows = append(rows, settingRow{skEditor, ""})
 	return rows
 }

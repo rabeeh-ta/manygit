@@ -402,6 +402,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 	}
 	return m, nil
 }
@@ -1447,6 +1449,16 @@ func (m *Model) settingsSelect() tea.Cmd {
 	case skGlyph:
 		m.cfg.StatusGlyphs = r.val
 		m.saveConfig()
+	case skMouse:
+		// Takes effect now, not on the next launch: the terminal is told to start
+		// or stop reporting the mouse, so drag-to-select comes back the moment you
+		// pick off.
+		m.cfg.Mouse = r.val
+		m.saveConfig()
+		if m.cfg.MouseEnabled() {
+			return tea.EnableMouseCellMotion
+		}
+		return tea.DisableMouse
 	case skEditor:
 		m.editingOpenCmd = true
 		m.openCmdBuf = m.cfg.OpenCmd

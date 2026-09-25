@@ -22,7 +22,7 @@
   // maxDepthOptions, from internal/tui/settings.go. config.Default() ships 3.
   var MAX_DEPTHS = [1, 2, 3, 4, 5];
 
-  var SK_THEME = 0, SK_HARNESS = 1, SK_NEWSDAYS = 2, SK_MAXDEPTH = 3, SK_GLYPH = 4, SK_EDITOR = 5;
+  var SK_THEME = 0, SK_HARNESS = 1, SK_NEWSDAYS = 2, SK_MAXDEPTH = 3, SK_GLYPH = 4, SK_MOUSE = 5, SK_EDITOR = 6;
 
   var STORE = "manygit.theme";
   var ROOT = "~/code";
@@ -418,6 +418,7 @@
     newsDays: 3,
     maxDepth: 3,
     glyphs: "unicode",
+    mouse: "on", // config.Default().Mouse — click + wheel, like the binary
     openCmd: "code"
   };
 
@@ -672,14 +673,25 @@
         : "Everything is in sync";
       return centerBlock(d(why));
     }
+    var rl = repoLines(vis, S.cursor);
+    var w = win(rl.lines.length, rl.cursorLine, h);
+    return rl.lines.slice(w[0], w[1]).map(function (e) {
+      var r = vis[e.repo];
+      return e.header ? '<div class="gp">' + esc(r.g) + "</div>" : renderRow(e.repo, r);
+    }).join("");
+  }
+
+  // repoLines, ported from view.go: the pane before windowing — a header wherever
+  // the group changes, then the repo's row — plus the cursor's line. Shared by
+  // renderRepos and clickRow, so a click lands on the row drawn under it.
+  function repoLines(vis, cursor) {
     var lines = [], cursorLine = 0, last = null;
     vis.forEach(function (r, i) {
-      if (r.g !== last) { lines.push('<div class="gp">' + esc(r.g) + "</div>"); last = r.g; }
-      if (i === S.cursor) cursorLine = lines.length;
-      lines.push(renderRow(i, r));
+      if (r.g !== last) { lines.push({ repo: i, header: true }); last = r.g; }
+      if (i === cursor) cursorLine = lines.length;
+      lines.push({ repo: i, header: false });
     });
-    var w = win(lines.length, cursorLine, h);
-    return lines.slice(w[0], w[1]).join("");
+    return { lines: lines, cursorLine: cursorLine };
   }
 
   function renderScripts(h) {
@@ -976,7 +988,7 @@
 
   function tabBar(tabs, active) {
     return tabs.map(function (t, i) {
-      return '<span class="tab" data-on="' + (i === active ? 1 : 0) + '">' +
+      return '<span class="tab" data-tab="' + i + '" data-on="' + (i === active ? 1 : 0) + '">' +
         esc(t.n + " " + t.name) + "</span>";
     }).join('<span class="tabdiv">│</span>');
   }
@@ -1055,7 +1067,7 @@
   // titledBox / panelStyle: the ? overlay is an untitled full-screen panel
   // (overlayBox), so an empty title renders no label at all.
   function pane(title, focused, body, id) {
-    return '<div class="pane" data-focused="' + (focused ? 1 : 0) + '">' +
+    return '<div class="pane" data-pid="' + id + '" data-focused="' + (focused ? 1 : 0) + '">' +
       (title ? '<div class="pane__title">' + title + "</div>" : "") +
       '<div class="pane__body" data-pane="' + id + '">' + body + "</div></div>";
   }
@@ -1069,6 +1081,7 @@
     NEWS_DAYS.forEach(function (n) { rows.push({ kind: SK_NEWSDAYS, val: String(n) }); });
     MAX_DEPTHS.forEach(function (n) { rows.push({ kind: SK_MAXDEPTH, val: String(n) }); });
     rows.push({ kind: SK_GLYPH, val: "unicode" }, { kind: SK_GLYPH, val: "ascii" });
+    rows.push({ kind: SK_MOUSE, val: "on" }, { kind: SK_MOUSE, val: "off" });
     rows.push({ kind: SK_EDITOR, val: "" });
     return rows;
   }
@@ -1084,6 +1097,7 @@
     hdr[SK_NEWSDAYS] = gp("News window") + d("   (top-bar lookback)");
     hdr[SK_MAXDEPTH] = gp("Scan depth") + d("   (rescans on select)");
     hdr[SK_GLYPH] = gp("Ahead / behind glyphs");
+    hdr[SK_MOUSE] = gp("Mouse") + d("   (off = terminal selects)");
     hdr[SK_EDITOR] = gp("Editor") + d("   (`o` opens the repo)");
 
     // Two columns, split at SK_MAXDEPTH — the Go splits the same way so the whole
@@ -1117,6 +1131,8 @@
       } else if (r.kind === SK_GLYPH) {
         var gl = r.val === "ascii" ? "ascii    (+ / -)" : "unicode  (arrows)";
         mid.push(line(on, radio(r.val === S.glyphs), gl));
+      } else if (r.kind === SK_MOUSE) {
+        mid.push(line(on, radio(r.val === S.mouse), r.val === "off" ? "off" : "on   (click + wheel)"));
       } else {
         var val = S.editingOpenCmd ? S.openCmdBuf + "_" : S.openCmd;
         var hint = S.editingOpenCmd ? "   enter saves · esc cancels" : on ? "   enter to edit" : "";
@@ -1228,7 +1244,13 @@
       kr(og("*N"), "N files changed (dirty)"),
       kr(d("~ ."), "fetching / loading"),
       kr(d("no-remote"), "local-only repo (no remote configured)"),
-      kr(rd("!"), "branch has no upstream, or error")
+      kr(rd("!"), "branch has no upstream, or error"),
+      // Last, as in view.go: the status legend keeps the first page.
+      "<div>&nbsp;</div>",
+      "<div>" + gp("Mouse") + d("   (? settings: on / off)") + "</div>",
+      kr("click", "focus a pane, pick a row or tab"),
+      kr("wheel", "j/k in the pane under the pointer"),
+      kr("shift", "hold it to drag-select text")
     ];
     var n = Math.max(left.length, right.length);
     while (left.length < n) left.push("<div>&nbsp;</div>");
@@ -1300,6 +1322,7 @@
   // content (.pane__body is height:100%, overflow:hidden), so this converges
   // after one correction and every later render measures the same values.
   function render() {
+    el.term.setAttribute("data-mouse", S.mouse); // site.css: pointer cursor on clickable bits
     paint();
     var changed = false;
     Array.prototype.forEach.call(el.screen.querySelectorAll("[data-pane]"), function (e) {
@@ -2061,6 +2084,7 @@
       } else if (r.kind === SK_NEWSDAYS) S.newsDays = parseInt(r.val, 10);
       else if (r.kind === SK_MAXDEPTH) setMaxDepth(parseInt(r.val, 10));
       else if (r.kind === SK_GLYPH) S.glyphs = r.val;
+      else if (r.kind === SK_MOUSE) S.mouse = r.val; // live, like tea.DisableMouse
       else { S.editingOpenCmd = true; S.openCmdBuf = S.openCmd; }
     }
   }
@@ -2435,6 +2459,137 @@
   var shiftTab = false;
   var altKey = false;
 
+  /* -- mouse (mouse.go) ------------------------------------------------------
+     A port of handleMouse / clickTab / clickRow / clickPR / clickBottom. The Go
+     turns a screen cell into a pane with hitTest; here the DOM already knows which
+     pane was hit, so only the ROW is arithmetic — the pixel offset into the pane
+     body over LINE_H, the same rows-per-pane figure render() measures. From there
+     it is the Go's logic: re-derive the renderer's window() and pick the line.
+
+     Navigation only, as in the binary: a click never checks out, syncs, pushes,
+     discards or runs. */
+
+  var PID_FOCUS = { repos: "repos", scripts: "scripts", top: "branches", bottom: "bottom" };
+
+  function mouseBlocked() {
+    return S.filtering || S.shellPrompting || S.aiPrompting ||
+      S.confirmPlan || S.confirmDiscard || S.editingOpenCmd;
+  }
+
+  // handleMouse's front half: which pane, and which line of it. Returns null for
+  // anything that isn't a pane (the bars, the gap between the columns).
+  function paneHit(target, clientY) {
+    var pane = target.closest && target.closest("[data-pid]");
+    if (!pane) return null;
+    var pid = pane.getAttribute("data-pid");
+    var focus = pid === "zoom" ? S.focus : PID_FOCUS[pid];
+    if (!focus) return null;
+    var body = pane.querySelector("[data-pane]");
+    var tab = target.closest(".tab[data-tab]");
+    var row = -1; // -1 = the title border, where the tab bar sits
+    if (!tab && body) {
+      row = Math.floor((clientY - body.getBoundingClientRect().top) / LINE_H);
+      if (row < 0) row = -1;
+    }
+    return { focus: focus, row: row, tab: tab ? parseInt(tab.getAttribute("data-tab"), 10) : -1, inner: rows(pid, 1) };
+  }
+
+  function clickTab(h) {
+    if (h.tab < 0) return;
+    if (h.focus === "branches") setTopView(h.tab === 1 ? "prs" : "branches");
+    else if (h.focus === "bottom") setBottomView(["graph", "changes", "output"][h.tab]);
+  }
+
+  function clickRow(h) {
+    if (h.focus === "repos") {
+      var vis = visibleRepos();
+      var rl = repoLines(vis, S.cursor);
+      var w = win(rl.lines.length, rl.cursorLine, Math.max(1, h.inner));
+      var i = w[0] + h.row;
+      if (i >= w[1] || rl.lines[i].header || rl.lines[i].repo === S.cursor) return;
+      S.cursor = rl.lines[i].repo;
+      clearBranchFilter(); // same as j/k: the branch filter belonged to the old repo
+      contextCmd();
+    } else if (h.focus === "scripts") {
+      var ws = win(visibleScripts().length, S.scriptCursor, h.inner);
+      if (ws[0] + h.row < ws[1]) S.scriptCursor = ws[0] + h.row; // select only — enter runs
+    } else if (h.focus === "branches") {
+      if (S.topView === "prs") { clickPR(h); return; }
+      var wb = win(visibleBranches().length, S.branchCursor, h.inner);
+      if (wb[0] + h.row < wb[1]) S.branchCursor = wb[0] + h.row; // select only — enter checks out
+    } else if (h.focus === "bottom") {
+      clickBottom(h);
+    }
+  }
+
+  // clickPR mirrors renderPRs: a header, a spacer, then rows of PR_ROW_LINES
+  // lines with PR_ROW_GAP blanks between them.
+  function clickPR(h) {
+    var prs = visiblePRs();
+    if (!S.ghAvailable || !prs.length || h.row < 2) return;
+    var w = win(prs.length, S.prCursor, prRowsThatFit(Math.max(1, h.inner - 2)));
+    var r = h.row - 2;
+    if (r % (PR_ROW_LINES + PR_ROW_GAP) >= PR_ROW_LINES) return; // the gap between two PRs
+    var i = w[0] + Math.floor(r / (PR_ROW_LINES + PR_ROW_GAP));
+    if (i < w[1]) S.prCursor = i;
+  }
+
+  // Graph and Changes are picked from; the diff and Output are only read, so a
+  // click there just focuses (the wheel scrolls them).
+  function clickBottom(h) {
+    if (S.bottomView === "graph") {
+      var commits = graphCommits();
+      var selIdx = 0;
+      if (S.graphSel >= 1 && commits[S.graphSel - 1]) selIdx = graph.indexOf(commits[S.graphSel - 1]) + 1;
+      var w = win(1 + graph.length, selIdx, h.inner);
+      var i = w[0] + h.row;
+      if (i >= w[1]) return;
+      if (i === 0) { S.graphSel = 0; return; }
+      var g = graph[i - 1];
+      if (g.hash) S.graphSel = commits.indexOf(g) + 1; // connector art isn't a commit
+    } else if (S.bottomView === "changes" && !S.changeShowDiff && changeFiles.length) {
+      var wc = win(changeFiles.length, S.changeCursor, h.inner);
+      if (wc[0] + h.row < wc[1]) S.changeCursor = wc[0] + h.row; // select only — enter opens the diff
+    }
+  }
+
+  function handleClick(e) {
+    if (S.mouse !== "on" || mouseBlocked()) return;
+    if (e.target.closest && e.target.closest("a")) return; // the @author links stay links
+    // Full-screen overlays: nothing in them to point at.
+    if (S.showGraph || S.showNews || S.showHelp) return;
+    var h = paneHit(e.target, e.clientY);
+    if (!h) return;
+    runInit();
+    S.focus = h.focus; // what `tab` does: focus only, no view change
+    if (h.row < 0) clickTab(h);
+    else clickRow(h);
+    render();
+  }
+
+  // The wheel is j/k for the pane under the pointer, and scrolls the overlays the
+  // way j/k does — except the settings face, where j/k previews themes live.
+  // Trackpads send many small deltas, so they add up to whole lines first.
+  var wheelAcc = 0;
+  function handleWheel(e) {
+    if (document.activeElement !== el.term) return; // see the note in boot()
+    if (S.mouse !== "on" || mouseBlocked()) return;
+    e.preventDefault();
+    wheelAcc += e.deltaMode === 1 ? e.deltaY * LINE_H : e.deltaY;
+    var steps = Math.trunc(wheelAcc / LINE_H);
+    if (!steps) return;
+    wheelAcc -= steps * LINE_H;
+    if (S.showHelp && !S.showKeys) return;
+    if (!(S.showGraph || S.showNews || S.showHelp)) {
+      var h = paneHit(e.target, e.clientY);
+      if (!h) return;
+      S.focus = h.focus;
+    }
+    var k = steps > 0 ? "ArrowDown" : "ArrowUp";
+    for (var n = Math.abs(steps); n > 0; n--) handleKey(k);
+    render();
+  }
+
   // idleEscape reports whether esc has nothing to do in the TUI right now. The
   // demo keeps a single idle esc as its accessible keyboard exit. A second
   // rapid esc after backing out of a layer mirrors the tool's quit shortcut.
@@ -2535,6 +2690,14 @@
     el.term.addEventListener("focus", function () { runInit(); render(); });
     el.term.addEventListener("blur", render);
     window.addEventListener("resize", render);
+
+    // The mouse. Clicks work from the first one (it also focuses the terminal,
+    // like clicking into a terminal window). The wheel only once the terminal
+    // has focus: a real terminal owns every wheel event over it, but here the
+    // widget sits in a page, and grabbing the wheel of someone scrolling PAST the
+    // demo would trap them in it — the same reason esc releases the keyboard.
+    el.term.addEventListener("click", handleClick);
+    el.term.addEventListener("wheel", handleWheel, { passive: false });
 
     // The on-screen keypad runs the same handler, so touch works too. Only a
     // real pointer click pulls focus into the terminal (detail > 0) — a keyboard

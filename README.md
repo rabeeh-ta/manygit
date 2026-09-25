@@ -135,9 +135,10 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `o` | open the repo in your editor |
 | `z` | zoom the focused pane |
 | `esc` | back out one layer of state: the diff, then Changes, then zoom, then the `/` and `F` filters |
-| `?` | help — one overlay, two faces: the keybindings & status legend, and settings (themes, AI harness, news window, scan depth, glyphs, editor). `tab` / `shift+tab` / `[` / `]` switch faces; `?` or `esc` closes from either |
+| `?` | help — one overlay, two faces: the keybindings & status legend, and settings (themes, AI harness, news window, scan depth, glyphs, mouse, editor). `tab` / `shift+tab` / `[` / `]` switch faces; `?` or `esc` closes from either |
 | `q` | quit |
 | `esc esc` | quit with two consecutive presses within 500 ms, from any screen; any other key resets the sequence. The first press shows "Press Esc again to quit" in the footer until the window expires |
+| click / wheel | **mouse** (on by default) — click a pane to focus it, a row to move its cursor, a tab chip to switch view; the wheel is `j`/`k` for the pane under the pointer. Navigation only: nothing that changes a repo (checkout, sync, push, discard, run) happens on a click — those stay on the keys. Hold `shift` to select text while it's on, or set **Mouse → off** in `?` to give the mouse back to your terminal |
 
 Status column: `ok` up to date · `↑N` ahead · `↓N` behind · `*N` dirty ·
 `no-remote` local-only repo (never pushed anywhere — `s`/`p` skip it) · `!` the
@@ -194,6 +195,7 @@ max_depth: 3            # folders below the root to search for repos (1–5 in `
 open_cmd: code          # `o` runs this in the repo: code | cursor | code -r | code .
 theme: default          # default | serika_dark | dracula | nord | catppuccin | 8008
 status_glyphs: unicode  # or "ascii"
+mouse: on               # "off" leaves the mouse to your terminal (plain drag-to-select)
 ```
 
 `max_depth` is also a setting in the `?` overlay — picking a depth re-walks the tree straight
@@ -212,6 +214,8 @@ manygit never writes to the folder you launch from. On its own it never
 force-pushes, merges, or rebases — `s` is fetch + fast-forward-only pull and `p`
 is a plain push — and the only destructive thing it offers *on its own* is
 discarding a repo's changes (`d` / `D`), which always asks you to confirm first.
+None of it is reachable by mouse: a click only moves focus, a cursor or a tab, and
+clicks are ignored while a confirm is waiting for `y`.
 
 `!` is the deliberate exception: it runs whatever bash command you type in the
 highlighted repo (falling back to `cmd.exe` on Windows if bash isn't on PATH),

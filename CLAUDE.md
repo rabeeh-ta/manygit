@@ -31,6 +31,7 @@ state, or new copy in the footer/help.
 | `internal/tui/view.go` → `syncGlyph`, `renderRow`, `tabBar`, `overlayTabs`, `overlayHead`, `window`, `centerBlock` | `demo.js` → same names, ported deliberately |
 | `internal/tui/theme.go` → `themeList` | `docs/assets/site.css` → `:root[data-theme=…]` blocks |
 | `internal/tui/settings.go` → `settingRows` | `demo.js` → `settingRows` |
+| `internal/tui/mouse.go` → `clickTab`, `clickRow`, `clickPR`, `clickBottom`, `mouseBlocked` | `demo.js` → same names; `repoLines` (view.go) is shared by render and click in both |
 | `internal/discover` → repo/script discovery | `demo.js` → the `REPOS` / `SCRIPTS` fixtures |
 | `README.md` key table | `docs/index.html` → the Keys section |
 
@@ -69,7 +70,7 @@ lying. Adding `!` is what surfaced this.
   `:root[data-theme=…]` block and a `:root[data-mode="light"][data-theme=…]` one
   — theme.go's accents are tuned for a dark terminal and none of them pass on
   paper unmodified. Darken hue-preserving and **measure**; don't eyeball.
-- **The demo intentionally diverges in exactly five places**, all because it runs
+- **The demo intentionally diverges in exactly six places**, all because it runs
   in a browser:
   1. `q` explains itself instead of quitting.
   2. `o` explains itself instead of spawning an editor.
@@ -97,7 +98,15 @@ lying. Adding `!` is what surfaced this.
      output is scripted, the same way it says the git is fake — if you extend
      `cannedShell`, keep that label true.
 
-  Keep all five, and keep them honest.
+  6. **The wheel only works once the demo has focus.** A terminal gets every
+     wheel event over it; a widget in a page that grabbed the wheel would trap
+     anyone scrolling past it, the same problem as #3. Clicks work from the first
+     one (the click also focuses the demo). How a click is resolved differs too:
+     the Go maps a screen cell with `hitTest`, the demo lets the DOM say which pane
+     and tab were hit, and only the row is arithmetic (pixel offset / `LINE_H`).
+     From there `clickRow` and the rest are the Go's logic.
+
+  Keep all six, and keep them honest.
 - **`runInit()` is a port of `Init()`, not an animation.** First focus replays the
   real launch: every repo unloaded and immediately fetching, so a row goes
   `.` → `~` → its glyph as the local status read lands and then the fetch returns;

@@ -24,11 +24,21 @@ type Config struct {
 	Theme        string   `yaml:"theme"`         // color theme name (see the tui theme list)
 	Harness      string   `yaml:"harness"`       // AI harness: "claude" or "codex" (see internal/harness)
 	NewsDays     int      `yaml:"news_days"`     // top-bar news feed window in days (commits newer than this)
+	Mouse        string   `yaml:"mouse"`         // "on" (click + wheel) or "off" (the terminal keeps the mouse)
 }
 
 // Default returns the built-in configuration.
 func Default() Config {
-	return Config{MaxDepth: 3, Concurrency: 8, OpenCmd: "code", StatusGlyphs: "unicode", Theme: "default", NewsDays: 3}
+	return Config{MaxDepth: 3, Concurrency: 8, OpenCmd: "code", StatusGlyphs: "unicode", Theme: "default", NewsDays: 3, Mouse: "on"}
+}
+
+// MouseEnabled reports whether manygit captures the mouse (click to focus and
+// select, wheel to move). A string rather than a bool for the same reason as
+// StatusGlyphs: an absent key must mean the default, and a YAML false can't be
+// told apart from absent. mouse: off hands the mouse back to the terminal, so
+// plain drag-to-select works without holding shift.
+func (c Config) MouseEnabled() bool {
+	return c.Mouse != "off"
 }
 
 // UnicodeGlyphs reports whether ahead/behind should use ↑/↓ (true) or the
@@ -83,6 +93,9 @@ func Load(path string) (Config, error) {
 	}
 	if file.NewsDays != 0 {
 		cfg.NewsDays = file.NewsDays
+	}
+	if file.Mouse != "" {
+		cfg.Mouse = file.Mouse
 	}
 	cfg.Prune = append(cfg.Prune, file.Prune...)
 	return cfg, nil

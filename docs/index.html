@@ -638,7 +638,7 @@
                   <td class="kt__k"><b>?</b></td>
                   <td>
                     Help: the keybindings and the status legend, plus settings —
-                    themes, AI harness, news window, scan depth, glyphs, editor.
+                    themes, AI harness, news window, scan depth, glyphs, mouse, editor.
                     <b>tab</b> or <b>[</b> <b>]</b> switch faces; <b>?</b> or
                     <b>esc</b> closes
                   </td>
@@ -650,6 +650,14 @@
                 <tr>
                   <td class="kt__k"><b>esc esc</b></td>
                   <td>Quit with two consecutive presses within 500 ms, from any screen; any other key resets the sequence. The first press shows "Press Esc again to quit" in the footer until the window expires</td>
+                  <td class="kt__k"><b>click</b> / <b>wheel</b></td>
+                  <td>
+                    The mouse, on by default. Click a pane to focus it, a row to move its
+                    cursor, a tab to switch view; the wheel is <b>j</b>/<b>k</b> for the
+                    pane under the pointer. Navigation only — a click never checks out,
+                    syncs, pushes, discards or runs; those stay on the keys. Hold
+                    <b>shift</b> to select text, or turn it off in settings
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -827,6 +835,13 @@
                   <td class="kt__k"><b>status_glyphs</b></td>
                   <td><code>unicode</code> arrows, or <code>ascii</code> if they misalign</td>
                 </tr>
+                <tr>
+                  <td class="kt__k"><b>mouse</b></td>
+                  <td>
+                    <code>on</code> (click and wheel), or <code>off</code> to leave the mouse to
+                    your terminal for plain drag-to-select
+                  </td>
+                </tr>
               </tbody>
             </table>
             <p>
@@ -834,6 +849,8 @@
               force-pushes, merges, or rebases — <b>s</b> is fetch plus a fast-forward-only pull,
               <b>p</b> is a plain push — and the one destructive action it offers on its own
               is discarding a repo's changes with <b>d</b> / <b>D</b>, which always asks first.
+              None of it is reachable by mouse: a click only moves focus, a cursor or a tab, and
+              clicks are ignored while a confirm is waiting for <b>y</b>.
             </p>
             <p>
               <b>!</b> is the deliberate exception: it runs the bash command you type, in the

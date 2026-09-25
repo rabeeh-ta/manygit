@@ -741,6 +741,12 @@ a.chip:hover {
 .tabdiv {
   color: var(--dim);
 }
+/* With the mouse on (? settings, like the binary), the panes and their tabs take
+   clicks — say so with the cursor. Off, the pointer is back to plain text. */
+.term[data-mouse="on"] .pane[data-pid]:not([data-pid="help"]) .pane__body,
+.term[data-mouse="on"] .pane[data-pid]:not([data-pid="help"]) .tab[data-tab] {
+  cursor: pointer;
+}
 .tabhint {
   color: var(--dim);
   padding-left: 1.5em;
