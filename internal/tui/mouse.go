@@ -21,7 +21,8 @@ type paneHit struct {
 	// row is the content line under the pointer (0 = the first line inside the
 	// border), or -1 on the top border, where the tab bar sits.
 	row int
-	// col is the offset from where the border's label starts, for tab hits.
+	// col is the offset from the border's label and padded content, both of
+	// which start two cells in. It is used for tabs and the PR list header.
 	col int
 	// inner is the pane's inner height — the h the renderer windowed with.
 	inner int
@@ -184,8 +185,24 @@ func (m *Model) clickRow(h paneHit) tea.Cmd {
 // clickPR mirrors renderPRsView: a header line and a spacer, then rows of
 // prRowLines lines separated by prRowGap blanks.
 func (m *Model) clickPR(h paneHit) {
+	if !m.ghAvailable {
+		return
+	}
+	if h.row == 0 {
+		// The header remains clickable when a list is empty or still loading.
+		col := 1 // renderPRsView's leading space
+		for i, label := range m.prListLabels() {
+			w := lipgloss.Width(label)
+			if h.col >= col && h.col < col+w {
+				m.setPRList(i == 1)
+				return
+			}
+			col += w + lipgloss.Width(prListGap)
+		}
+		return
+	}
 	prs := m.visiblePRs()
-	if !m.ghAvailable || len(prs) == 0 || h.row < 2 {
+	if len(prs) == 0 || h.row < 2 {
 		return
 	}
 	start, end := window(len(prs), m.prCursor, prRowsThatFit(max(1, h.inner-2)))

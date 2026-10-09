@@ -572,9 +572,26 @@ func centerBlock(w, h int, s string) string {
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, s)
 }
 
+const prListGap = "    "
+
+// prListLabels is shared by the header renderer and mouse hit-testing. The
+// inactive list includes its keyboard hint, so its click target includes it too.
+func (m Model) prListLabels() [2]string {
+	labels := [2]string{
+		"my PRs (" + strconv.Itoa(len(m.prMine)) + ")",
+		"review requests (" + strconv.Itoa(len(m.prReview)) + ")",
+	}
+	if m.prShowReview {
+		labels[0] = "m: " + labels[0]
+	} else {
+		labels[1] = "m: " + labels[1]
+	}
+	return labels
+}
+
 // renderPRsView renders the PRs sub-view: a sub-toggle header (my PRs / review
-// requests, switched with `m`) pinned to the top, a blank spacer, then the active
-// (filtered) PR list. Empty / loading / unavailable states are centered for a
+// requests, switched with `m` or a click) pinned to the top, a blank spacer,
+// then the active (filtered) PR list. Empty / loading / unavailable states are centered for a
 // calmer, less-crammed look.
 func (m Model) renderPRsView(contentW, innerH int) string {
 	if !m.ghAvailable {
@@ -582,14 +599,13 @@ func (m Model) renderPRsView(contentW, innerH int) string {
 	}
 
 	// Sub-toggle header: the active list emphasized, the other reachable via `m`.
-	my := "my PRs (" + strconv.Itoa(len(m.prMine)) + ")"
-	rev := "review requests (" + strconv.Itoa(len(m.prReview)) + ")"
-	sep := styleDim.Render("    ")
+	labels := m.prListLabels()
+	sep := styleDim.Render(prListGap)
 	var header string
 	if m.prShowReview {
-		header = " " + styleDim.Render("m: "+my) + sep + styleGroup.Render(rev)
+		header = " " + styleDim.Render(labels[0]) + sep + styleGroup.Render(labels[1])
 	} else {
-		header = " " + styleGroup.Render(my) + sep + styleDim.Render("m: "+rev)
+		header = " " + styleGroup.Render(labels[0]) + sep + styleDim.Render(labels[1])
 	}
 
 	prs := m.visiblePRs()
@@ -1373,7 +1389,7 @@ func (m Model) keysColumns() (leftCol, rightCol []string) {
 		// the two to find by scrolling.
 		"",
 		styleGroup.Render("Mouse") + styleDim.Render("   (? settings: on / off)"),
-		kr("click", "focus a pane, pick a row or tab"),
+		kr("click", "focus; pick a row, tab or PR list"),
 		kr("wheel", "j/k in the pane under the pointer"),
 		kr("shift", "hold it to drag-select text"),
 	}

@@ -403,7 +403,7 @@
     ghAvailable: false,
     ghUser: "",
     prLoaded: false,
-    prChosen: false, // the user picked a list with `m`; autoPickPRList defers to it
+    prChosen: false, // the user picked a list with `m` or a click; autoPickPRList defers to it
 
     // top-bar news. Empty until the harness summarises; newsLoading drives the
     // "summarizing commits..." note next to the repo count.
@@ -867,15 +867,21 @@
     return out;
   }
 
+  // prListLabels, shared with the Go header renderer and hit-test.
+  function prListLabels() {
+    var labels = ["my PRs (" + prMine().length + ")", "review requests (" + prReview().length + ")"];
+    labels[S.prShowReview ? 0 : 1] = "m: " + labels[S.prShowReview ? 0 : 1];
+    return labels;
+  }
+
   function renderPRs(h) {
     if (!S.ghAvailable) {
       return centerBlock(d(prUnavailableHint()).replace(/\n/g, "<br>"));
     }
-    var my = "my PRs (" + prMine().length + ")";
-    var rev = "review requests (" + prReview().length + ")";
-    var header = S.prShowReview
-      ? " " + d("m: " + my) + d("    ") + gp(rev)
-      : " " + gp(my) + d("    ") + d("m: " + rev);
+    var labels = prListLabels();
+    var header = ' <span data-pr-list="0">' + (S.prShowReview ? d(labels[0]) : gp(labels[0])) +
+      "</span>" + d("    ") + '<span data-pr-list="1">' +
+      (S.prShowReview ? gp(labels[1]) : d(labels[1])) + "</span>";
 
     var prs = visiblePRs();
     if (!prs.length) {
@@ -1248,7 +1254,7 @@
       // Last, as in view.go: the status legend keeps the first page.
       "<div>&nbsp;</div>",
       "<div>" + gp("Mouse") + d("   (? settings: on / off)") + "</div>",
-      kr("click", "focus a pane, pick a row or tab"),
+      kr("click", "focus; pick a row, tab or PR list"),
       kr("wheel", "j/k in the pane under the pointer"),
       kr("shift", "hold it to drag-select text")
     ];
@@ -1470,8 +1476,13 @@
   //
   // Runs both when the pane opens and when the lists land — they load async, so
   // `4` is normally pressed while both are still empty (runInit reproduces that
-  // gap). Once the user has chosen with `m` it stops, so an explicit choice
+  // gap). Once the user has chosen with `m` or a click it stops, so an explicit choice
   // outlives the `r` refresh.
+  function setPRList(review) {
+    S.prChosen = true;
+    if (S.prShowReview !== review) { S.prShowReview = review; S.prCursor = 0; }
+  }
+
   function autoPickPRList() {
     if (S.prChosen) return;
     var want = prMine().length === 0 && prReview().length > 0;
@@ -2336,7 +2347,7 @@
       case "b": checkoutSelected(); break;
       case "m":
         // prChosen: an explicit pick, so autoPickPRList stops overriding it.
-        if (S.focus === "branches" && S.topView === "prs") { S.prShowReview = !S.prShowReview; S.prChosen = true; S.prCursor = 0; }
+        if (S.focus === "branches" && S.topView === "prs") setPRList(!S.prShowReview);
         break;
       case "Escape": {
         // esc backs out of exactly ONE layer per press, innermost first, so it
@@ -2486,12 +2497,14 @@
     if (!focus) return null;
     var body = pane.querySelector("[data-pane]");
     var tab = target.closest(".tab[data-tab]");
+    var prList = target.closest("[data-pr-list]");
     var row = -1; // -1 = the title border, where the tab bar sits
     if (!tab && body) {
       row = Math.floor((clientY - body.getBoundingClientRect().top) / LINE_H);
       if (row < 0) row = -1;
     }
-    return { focus: focus, row: row, tab: tab ? parseInt(tab.getAttribute("data-tab"), 10) : -1, inner: rows(pid, 1) };
+    return { focus: focus, row: row, tab: tab ? parseInt(tab.getAttribute("data-tab"), 10) : -1,
+      prList: prList ? parseInt(prList.getAttribute("data-pr-list"), 10) : -1, inner: rows(pid, 1) };
   }
 
   function clickTab(h) {
@@ -2525,8 +2538,10 @@
   // clickPR mirrors renderPRs: a header, a spacer, then rows of PR_ROW_LINES
   // lines with PR_ROW_GAP blanks between them.
   function clickPR(h) {
+    if (!S.ghAvailable) return;
+    if (h.prList >= 0) { setPRList(h.prList === 1); return; }
     var prs = visiblePRs();
-    if (!S.ghAvailable || !prs.length || h.row < 2) return;
+    if (!prs.length || h.row < 2) return;
     var w = win(prs.length, S.prCursor, prRowsThatFit(Math.max(1, h.inner - 2)));
     var r = h.row - 2;
     if (r % (PR_ROW_LINES + PR_ROW_GAP) >= PR_ROW_LINES) return; // the gap between two PRs
@@ -2554,12 +2569,17 @@
   }
 
   function handleClick(e) {
-    if (S.mouse !== "on" || mouseBlocked()) return;
+    if (e.button !== 0 || e.shiftKey || S.mouse !== "on" || mouseBlocked()) return;
     if (e.target.closest && e.target.closest("a")) return; // the @author links stay links
     // Full-screen overlays: nothing in them to point at.
     if (S.showGraph || S.showNews || S.showHelp) return;
     var h = paneHit(e.target, e.clientY);
     if (!h) return;
+    // Resolve the press before focusing: focus redraws the screen and replaces
+    // the target. Waiting for the later click would lose the first selection.
+    // Shift presses keep the browser's native text selection.
+    e.preventDefault();
+    el.term.focus({ preventScroll: true });
     runInit();
     S.focus = h.focus; // what `tab` does: focus only, no view change
     if (h.row < 0) clickTab(h);
@@ -2696,7 +2716,7 @@
     // has focus: a real terminal owns every wheel event over it, but here the
     // widget sits in a page, and grabbing the wheel of someone scrolling PAST the
     // demo would trap them in it — the same reason esc releases the keyboard.
-    el.term.addEventListener("click", handleClick);
+    el.term.addEventListener("pointerdown", handleClick);
     el.term.addEventListener("wheel", handleWheel, { passive: false });
 
     // The on-screen keypad runs the same handler, so touch works too. Only a

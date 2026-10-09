@@ -140,7 +140,8 @@ Actions apply to the repo under the `>` cursor.
 - `q` — quit
 - `esc esc` — quit with two consecutive presses within 500 ms, from any screen; any other key resets the sequence. The first press shows "Press Esc again to quit" in the footer until the window expires
 - click / wheel — the mouse, on by default: click a pane to focus it, a row to move
-  its cursor, a tab to switch view; the wheel is `j`/`k` for the pane under the
+  its cursor, a tab to switch view, or my PRs / review requests to select a PR
+  list; the wheel is `j`/`k` for the pane under the
   pointer. Navigation only — a click never checks out, syncs, pushes, discards or
   runs. Hold `shift` to select text, or set `mouse: off` (also in settings) to
   leave the mouse to the terminal.

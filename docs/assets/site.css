@@ -555,6 +555,8 @@ a.chip:hover {
   position: absolute;
   inset: 0;
   z-index: 5;
+  /* The cue is visual: presses must reach the pane even before focus. */
+  pointer-events: none;
   display: grid;
   place-items: center;
   border-radius: 8px;
@@ -744,7 +746,8 @@ a.chip:hover {
 /* With the mouse on (? settings, like the binary), the panes and their tabs take
    clicks — say so with the cursor. Off, the pointer is back to plain text. */
 .term[data-mouse="on"] .pane[data-pid]:not([data-pid="help"]) .pane__body,
-.term[data-mouse="on"] .pane[data-pid]:not([data-pid="help"]) .tab[data-tab] {
+.term[data-mouse="on"] .pane[data-pid]:not([data-pid="help"]) .tab[data-tab],
+.term[data-mouse="on"] [data-pr-list] {
   cursor: pointer;
 }
 .tabhint {

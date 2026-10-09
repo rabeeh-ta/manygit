@@ -10,6 +10,7 @@ import (
 
 	"github.com/rabeeh-ta/manygit/internal/config"
 	"github.com/rabeeh-ta/manygit/internal/discover"
+	"github.com/rabeeh-ta/manygit/internal/gh"
 	"github.com/rabeeh-ta/manygit/internal/git"
 )
 
@@ -141,6 +142,119 @@ func TestMouse_ClickBranchSelectsButNeverChecksOut(t *testing.T) {
 	}
 	if cmd != nil {
 		t.Error("a click must not check out — enter does that")
+	}
+}
+
+func mousePRModel(t *testing.T) Model {
+	t.Helper()
+	m := mouseModel(t)
+	m.topView = tvPRs
+	m.ghAvailable = true
+	for i := 0; i < 4; i++ {
+		m.prMine = append(m.prMine, gh.PullRequest{Number: i + 1, Title: fmt.Sprintf("Mine %d", i)})
+	}
+	m.prReview = []gh.PullRequest{{Number: 11, Title: "Review first"}, {Number: 12, Title: "Review second"}}
+	return m
+}
+
+func TestMouse_ClickPRListHeaders(t *testing.T) {
+	for _, width := range []int{80, 120} {
+		for _, zoomed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("width-%d/zoom-%t", width, zoomed), func(t *testing.T) {
+				m := mousePRModel(t)
+				m.width, m.height = width, 20
+				m.focus, m.zoomed = panelBranches, zoomed
+				m.prCursor = 3
+				x, y := locate(t, m, "review requests")
+				m, cmd := click(m, x+5, y)
+				if !m.prShowReview || !m.prChosen || m.prCursor != 0 || m.focus != panelBranches {
+					t.Fatalf("review header: want explicit review list at cursor 0, got review=%t chosen=%t cursor=%d focus=%v", m.prShowReview, m.prChosen, m.prCursor, m.focus)
+				}
+				if cmd != nil {
+					t.Fatal("selecting a list must not check out a PR")
+				}
+				m.prCursor = 1
+				x, y = locate(t, m, "my PRs")
+				m, cmd = click(m, x+3, y)
+				if m.prShowReview || m.prCursor != 0 || cmd != nil {
+					t.Fatalf("my PRs header: want mine at cursor 0 with no command, got review=%t cursor=%d", m.prShowReview, m.prCursor)
+				}
+			})
+		}
+	}
+}
+
+func TestMouse_ClickActivePRListPreservesCursor(t *testing.T) {
+	m := mousePRModel(t)
+	m.prCursor = 2
+	x, y := locate(t, m, "my PRs")
+	m, _ = click(m, x, y)
+	if m.prCursor != 2 || m.prShowReview || !m.prChosen {
+		t.Fatalf("clicking the active list should preserve selection and record the choice: cursor=%d review=%t chosen=%t", m.prCursor, m.prShowReview, m.prChosen)
+	}
+}
+
+func TestMouse_ClickEmptyPRListSurvivesRefresh(t *testing.T) {
+	m := mousePRModel(t)
+	m.prMine = nil
+	m.autoPickPRList() // before an explicit choice, reviews are picked automatically
+	x, y := locate(t, m, "my PRs (0)")
+	m, _ = click(m, x, y)
+	if m.prShowReview || !m.prChosen {
+		t.Fatal("the empty my PRs list should still be selectable")
+	}
+	mm, _ := m.Update(prsMsg{review: true, prs: m.prReview})
+	m = mm.(Model)
+	if m.prShowReview {
+		t.Fatal("a refresh overrode the clicked empty list")
+	}
+	m.prReview = nil
+	x, y = locate(t, m, "review requests (0)")
+	m, _ = click(m, x, y)
+	if !m.prShowReview {
+		t.Fatal("the empty review requests list should still be selectable")
+	}
+}
+
+func TestMouse_PRHeaderGapAndSpacerDoNotSwitchLists(t *testing.T) {
+	m := mousePRModel(t)
+	m.prCursor = 2
+	x, y := locate(t, m, "my PRs (4)")
+	for _, point := range [][2]int{{x + lipgloss.Width("my PRs (4)") + 1, y}, {x, y + 1}} {
+		m, _ = click(m, point[0], point[1])
+		if m.prShowReview || m.prChosen || m.prCursor != 2 {
+			t.Fatal("header whitespace should not switch lists or select a row")
+		}
+	}
+}
+
+func TestMouse_PRListHeaderRespectsBlockedStates(t *testing.T) {
+	base := mousePRModel(t)
+	x, y := locate(t, base, "review requests")
+	for name, arm := range map[string]func(*Model){
+		"off":         func(m *Model) { m.cfg.Mouse = "off" },
+		"filter":      func(m *Model) { m.filtering = true },
+		"discard":     func(m *Model) { m.confirmDiscard = true },
+		"plan":        func(m *Model) { m.confirmPlan = true },
+		"unavailable": func(m *Model) { m.ghAvailable = false },
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := base
+			arm(&m)
+			m, cmd := click(m, x, y)
+			if m.prShowReview || m.prChosen || cmd != nil {
+				t.Fatal("blocked header click switched lists or dispatched an action")
+			}
+		})
+	}
+}
+
+func TestMouse_ClickPRRowStillSelectsWithoutCheckout(t *testing.T) {
+	m := mousePRModel(t)
+	x, y := locate(t, m, "Mine 2")
+	m, cmd := click(m, x, y)
+	if m.prCursor != 2 || m.prChosen || cmd != nil {
+		t.Fatalf("PR row click should select only: cursor=%d chosen=%t", m.prCursor, m.prChosen)
 	}
 }
 

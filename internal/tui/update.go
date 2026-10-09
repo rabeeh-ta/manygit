@@ -924,9 +924,7 @@ func (m Model) handleSingleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Toggle the PRs sub-view between "my PRs" and "review requests". Dedicated
 		// key, scoped to the PRs view so it stays unbound everywhere else.
 		if m.focus == panelBranches && m.topView == tvPRs {
-			m.prShowReview = !m.prShowReview
-			m.prChosen = true // an explicit pick; autoPickPRList stops overriding
-			m.prCursor = 0
+			m.setPRList(!m.prShowReview)
 		}
 	case "esc":
 		// Back out one layer per press, innermost first — diff, then Changes, then
@@ -1571,6 +1569,17 @@ func (m *Model) setTopView(v topView) {
 	}
 }
 
+// setPRList records an explicit list choice, shared by `m` and header clicks.
+// Selecting the current list preserves its cursor; changing lists starts at the
+// first PR. A refresh must not override either choice, even for an empty list.
+func (m *Model) setPRList(review bool) {
+	m.prChosen = true
+	if m.prShowReview != review {
+		m.prShowReview = review
+		m.prCursor = 0
+	}
+}
+
 // autoPickPRList points the PRs pane at whichever list has something in it: your
 // own PRs normally, review requests when yours are empty and reviews are
 // waiting. Opening onto an empty list while nine PRs sit in the other one wastes
@@ -1581,8 +1590,8 @@ func (m *Model) setTopView(v topView) {
 // It runs both when the pane opens and when the lists land, because they load
 // async: `4` is normally pressed while both are still empty, so picking only at
 // open time would never fire in the case that matters. Once the user has chosen
-// with `m` it stops entirely — an explicit choice has to outlive an `r` refresh
-// that would otherwise pull the pane out from under them.
+// with `m` or a click it stops entirely — an explicit choice has to outlive an
+// `r` refresh that would otherwise pull the pane out from under them.
 func (m *Model) autoPickPRList() {
 	if m.prChosen {
 		return
