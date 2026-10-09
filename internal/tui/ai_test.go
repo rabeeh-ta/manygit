@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -32,10 +33,26 @@ func stubHarness(t *testing.T, reply string, err error) *string {
 	return &gotPrompt
 }
 
+// fakeClaudeOnPath puts a stand-in claude on PATH. `:` only opens when
+// harness.Available finds the binary, and CI has no claude; askHarness is
+// stubbed, so the stand-in never runs.
+func fakeClaudeOnPath(t *testing.T) {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "claude")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", filepath.Dir(bin)+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 func aiModel(t *testing.T) Model {
 	t.Helper()
+	fakeClaudeOnPath(t)
 	cfg, repos := twoRepos(t)
-	cfg.Harness = "claude" // the prefix is a string; nothing needs to be installed
+	cfg.Harness = "claude"
 	return loadAll(t, New(cfg, "", repos, nil), 120, 40)
 }
 
@@ -220,6 +237,7 @@ func TestAI_PromptCarriesTheContext(t *testing.T) {
 // @script.sh must put the file's CONTENTS in the prompt — without them the
 // harness cannot know which part of the script the request is asking for.
 func TestAI_AtReferenceSendsFileContents(t *testing.T) {
+	fakeClaudeOnPath(t)
 	got := stubHarness(t, `{"steps":[],"note":"ok"}`, nil)
 	cfg, repos := twoRepos(t)
 	cfg.Harness = "claude"
@@ -245,6 +263,7 @@ func TestAI_AtReferenceSendsFileContents(t *testing.T) {
 
 // Tab completes a script reference, so you do not have to remember its path.
 func TestAI_TabCompletesScriptReference(t *testing.T) {
+	fakeClaudeOnPath(t)
 	cfg, repos := twoRepos(t)
 	cfg.Harness = "claude"
 	root := filepath.Dir(repos[0].Path)
@@ -430,6 +449,7 @@ func TestAI_NoHarnessExplainsItself(t *testing.T) {
 // the Output pane reports each step. This is the only test that proves the whole
 // chain — prompt, harness, validate, confirm, exec — actually moves git.
 func TestAI_ConfirmRunsThePlanForReal(t *testing.T) {
+	fakeClaudeOnPath(t)
 	stubHarness(t, `{"steps":[{"repo":"alpha","args":["tag","v0.0.9"]}],"note":""}`, nil)
 	cfg, repos := twoRepos(t)
 	cfg.Harness = "claude"
