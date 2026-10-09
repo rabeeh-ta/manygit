@@ -103,8 +103,13 @@ Flags:
 	// *.sh scripts near the root (root-level + one dir deep, e.g. scripts/).
 	scripts := discover.Scripts(scanRoot, 2, cfg.PruneSet())
 
+	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithReportFocus()}
+	if cfg.MouseEnabled() {
+		// Cell motion reports clicks and the wheel without every pointer move.
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
 	model := tui.New(cfg, scanRoot, repos, scripts)
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithReportFocus())
+	p := tea.NewProgram(model, opts...)
 	_, runErr := p.Run()
 	model.Close()
 	if runErr != nil {
