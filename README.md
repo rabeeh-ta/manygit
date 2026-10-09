@@ -102,6 +102,22 @@ manygit --root ~/work   # scan a specific folder
 
 manygit walks the folder (depth 3) for git repos and groups them by parent.
 
+Automatic fetches run concurrently using saved credentials. Git Credential
+Manager login prompts are disabled for background fetches, syncs, and pushes.
+If a network operation fails, the repo shows `!`; select it to see the error
+in the footer; press `e` to read the details in Output. Remote status may be
+stale until a fetch succeeds.
+Press `f` on a failed repo to retry fetching with login allowed. Manygit hands
+the terminal to Git so browser or terminal authentication can complete. After
+a successful interactive fetch, other failed fetches are retried concurrently
+without prompts. Failed syncs and pushes must be repeated explicitly.
+Cancelling login leaves the error visible; it never starts another login automatically.
+SSH configuration is preserved; other credential helpers may have their own
+prompt settings. You can also authenticate using `git fetch` outside manygit,
+then press `r`. Git configuration and credential storage are managed by Git and
+its helpers, not manygit. Background network operations time out after two
+minutes; interactive fetches after ten minutes.
+
 `manygit stats` prints public download counts from GitHub (total releases,
 all-time downloads split by OS, and the last 10 tags) — no auth, no telemetry,
 just aggregate numbers GitHub already keeps. Anyone can run it.
@@ -125,6 +141,7 @@ Actions apply to the **highlighted** repo (the `>` cursor).
 | `s` / `p` | sync (fetch + ff-pull) / push the highlighted repo |
 | `d` / `D` | discard changes (confirm): `d` tracked only · `D` also deletes untracked files |
 | `f` / `r` | fetch one / refetch all |
+| `e` | show the highlighted repo's network error in Output |
 | `g` | full-screen commit graph |
 | `n` | full-screen news feed — all headlines at once (AI-summarized, cached ~4h) |
 | `t` | toggle each repo's latest tag inline, after the branch (off by default) |
@@ -192,6 +209,7 @@ top-bar/footer GitHub bits are omitted.
 
 ```yaml
 max_depth: 3            # folders below the root to search for repos (1–5 in `?`)
+concurrency: 8          # maximum simultaneous fetch/sync/push operations
 open_cmd: code          # `o` runs this in the repo: code | cursor | code -r | code .
 theme: default          # default | serika_dark | dracula | nord | catppuccin | 8008
 status_glyphs: unicode  # or "ascii"

@@ -38,18 +38,6 @@ func gated(sem chan struct{}, fn func() tea.Msg) tea.Cmd {
 	}
 }
 
-func fetchCmd(sem chan struct{}, path string) tea.Cmd {
-	return gated(sem, func() tea.Msg { return fetchDoneMsg{path: path, err: git.Fetch(path)} })
-}
-
-func syncCmd(sem chan struct{}, path string) tea.Cmd {
-	return gated(sem, func() tea.Msg { return syncDoneMsg{path: path, err: git.PullFFOnly(path)} })
-}
-
-func pushCmd(sem chan struct{}, path string) tea.Cmd {
-	return gated(sem, func() tea.Msg { return pushDoneMsg{path: path, err: git.Push(path)} })
-}
-
 // discardCmd discards a repo's changes: full=true also deletes untracked files
 // (D); false reverts only tracked changes (d). Runs only after user confirmation.
 func discardCmd(sem chan struct{}, path string, full bool) tea.Cmd {

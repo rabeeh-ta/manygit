@@ -70,15 +70,20 @@ const (
 	outScript outputKind = iota
 	outShell
 	outAI
+	outNetwork
 )
 
 // repoVM is the per-repo view model.
 type repoVM struct {
-	repo      discover.Repo
-	status    git.RepoStatus
-	loaded    bool
-	fetching  bool
-	latestTag string // most recent tag, shown inline when showTagsInline is on
+	repo           discover.Repo
+	status         git.RepoStatus
+	loaded         bool
+	fetching       bool
+	networkRunning bool
+	networkID      uint64
+	networkErr     error
+	fetchErr       error
+	latestTag      string // most recent tag, shown inline when showTagsInline is on
 	// fp is git.Fingerprint at the last probe, or 0 when never sampled. While a
 	// script runs it is compared against a fresh sample to find the repos worth
 	// re-stat'ing; see repoProbeMsg.
@@ -87,7 +92,11 @@ type repoVM struct {
 
 // Model is the Bubble Tea model.
 type Model struct {
-	cfg config.Config
+	network     *networkRuntime
+	authRunning bool
+	authID      uint64
+	lastAuthID  uint64
+	cfg         config.Config
 	// root is the directory the repos were discovered under. Kept so the scan
 	// can be re-run when the depth setting changes; main.go resolves it once.
 	root  string
@@ -357,6 +366,7 @@ func New(cfg config.Config, root string, repos []discover.Repo, scripts []discov
 	}
 	applyTheme(themeByName(cfg.Theme)) // set the themeable styles from config
 	m := Model{
+		network: newNetworkRuntime(),
 		cfg:     cfg,
 		root:    root,
 		repos:   vms,
@@ -383,8 +393,7 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, statusCmd(r.repo.Path))
 	}
 	for _, r := range m.repos {
-		r.fetching = true
-		cmds = append(cmds, fetchCmd(m.sem, r.repo.Path))
+		cmds = append(cmds, m.startFetch(r, false))
 	}
 	if c := m.loadContextCmd(); c != nil {
 		cmds = append(cmds, c)

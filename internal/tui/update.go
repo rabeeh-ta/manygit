@@ -22,6 +22,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 	case tea.FocusMsg:
+		if m.authRunning {
+			return m, nil
+		}
 		// Terminal window regained focus — refresh every repo (like `r`), but
 		// only if we haven't fetched recently, so rapid alt-tabbing doesn't spray
 		// git fetches at every remote.
@@ -48,14 +51,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.reclampCursor(was)
 	case fetchDoneMsg:
 		var cmds []tea.Cmd
-		for _, r := range m.repos {
-			if r.repo.Path == msg.path {
-				r.fetching = false
-				if msg.err == nil {
-					cmds = append(cmds, statusCmd(msg.path)) // refresh ahead/behind asynchronously
-				}
-				break
+		if msg.interactive {
+			if !m.authRunning || msg.id != m.authID {
+				return m, nil
 			}
+			m.authRunning = false
+			m.lastFetch = time.Now() // restoring terminal focus must not refetch everything
+		}
+		r := m.networkRepo(msg.path, msg.id)
+		if r == nil {
+			return m, nil
+		}
+		r.fetching, r.networkRunning = false, false
+		r.fetchErr, r.networkErr = msg.err, msg.err
+		if msg.err == nil {
+			cmds = append(cmds, statusCmd(msg.path))
+			if msg.interactive {
+				m.lastAuthID = msg.id
+				cmds = append(cmds, m.setStatus("fetch succeeded — retry any failed sync/push explicitly"))
+				for _, other := range m.repos {
+					if other != r && other.fetchErr != nil {
+						cmds = append(cmds, m.startFetch(other, false))
+					}
+				}
+			}
+		} else if !msg.interactive && msg.id != 0 && msg.id < m.lastAuthID {
+			// A failure queued while the terminal was released arrived after
+			// login succeeded. Retry with the new credentials exactly once.
+			cmds = append(cmds, m.startFetch(r, false))
 		}
 		// Debounce a news refresh: only the latest tick in a fetch burst refreshes.
 		m.newsDebounce++
@@ -105,6 +128,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case syncDoneMsg:
+		r := m.networkRepo(msg.path, msg.id)
+		if r == nil {
+			return m, nil
+		}
+		if !msg.skipped {
+			r.networkRunning = false
+			r.networkErr = msg.err
+			if msg.err == nil {
+				r.fetchErr = nil
+			}
+		}
 		exp := m.setStatus(m.syncResultText(msg))
 		cmds := []tea.Cmd{exp}
 		if !msg.skipped && msg.err == nil {
@@ -112,6 +146,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 	case pushDoneMsg:
+		r := m.networkRepo(msg.path, msg.id)
+		if r == nil {
+			return m, nil
+		}
+		if !msg.skipped {
+			r.networkRunning = false
+			r.networkErr = msg.err
+		}
 		name := baseName(msg.path)
 		var s string
 		switch {
@@ -435,10 +477,10 @@ func (m *Model) applyRescan(found []discover.Repo) tea.Cmd {
 			vms[i] = old
 			continue
 		}
-		vm := &repoVM{repo: rp, fetching: true}
+		vm := &repoVM{repo: rp}
 		vms[i] = vm
 		added++
-		cmds = append(cmds, statusCmd(rp.Path), fetchCmd(m.sem, rp.Path))
+		cmds = append(cmds, statusCmd(rp.Path), m.startFetch(vm, false))
 	}
 	dropped := len(m.repos) - (len(found) - added)
 	m.repos = vms
@@ -557,13 +599,15 @@ const focusRefetchCooldown = 45 * time.Second
 // refetchAllCmd fetches every not-already-fetching repo (the `r` action, also
 // fired when the terminal window regains focus).
 func (m Model) refetchAllCmd() tea.Cmd {
+	if m.authRunning {
+		return nil
+	}
 	var cmds []tea.Cmd
 	for _, r := range m.repos {
-		if r.fetching {
+		if r.fetching || r.networkRunning {
 			continue
 		}
-		r.fetching = true
-		cmds = append(cmds, fetchCmd(m.sem, r.repo.Path))
+		cmds = append(cmds, m.startFetch(r, false))
 	}
 	return tea.Batch(cmds...)
 }
@@ -985,10 +1029,26 @@ func (m Model) handleSingleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.aiPrompting = true
 		m.aiPrompt = ""
 		m.aiNames = m.aiContext().Names() // snapshot: ghost text must not shift under a fetch
+	case "e":
+		if r := m.currentVisible(vis); r != nil {
+			err := r.networkErr
+			if err == nil {
+				err = r.fetchErr
+			}
+			if err != nil {
+				if m.outputRunning || m.confirmPlan {
+					return m, m.setStatus("Output is busy — view the network error after it finishes")
+				}
+				m.takeOutputPane(outNetwork, "network error: "+r.repo.Name)
+				m.outputRunning = false
+				m.outputLines = []string{err.Error(), "", "Remote status may be stale until a fetch succeeds.", "Press f to retry fetching with login allowed.", "After login, repeat failed sync/push actions explicitly."}
+				m.bottomView, m.focus = bvOutput, panelBottom
+			}
+		}
 	case "f":
 		if r := m.currentVisible(vis); r != nil && !r.fetching {
-			r.fetching = true
-			return m, fetchCmd(m.sem, r.repo.Path)
+			cmd := m.startFetch(r, r.networkErr != nil || r.fetchErr != nil)
+			return m, cmd
 		}
 	case "r":
 		m.lastFetch = time.Now() // manual refresh resets the focus cooldown
@@ -998,8 +1058,15 @@ func (m Model) handleSingleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 	case "s":
+		if m.authRunning {
+			return m, m.setStatus("login already running — retry sync after it finishes")
+		}
 		var cmds []tea.Cmd
 		for _, r := range m.targets() {
+			if r.networkRunning || r.fetching {
+				cmds = append(cmds, m.setStatus("sync "+r.repo.Name+" skipped: network operation already running"))
+				continue
+			}
 			if !r.loaded {
 				path := r.repo.Path
 				cmds = append(cmds, func() tea.Msg {
@@ -1023,12 +1090,19 @@ func (m Model) handleSingleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				})
 				continue
 			}
-			cmds = append(cmds, syncCmd(m.sem, r.repo.Path))
+			cmds = append(cmds, m.startSync(r))
 		}
 		return m, tea.Batch(cmds...)
 	case "p":
+		if m.authRunning {
+			return m, m.setStatus("login already running — retry push after it finishes")
+		}
 		var cmds []tea.Cmd
 		for _, r := range m.targets() {
+			if r.networkRunning || r.fetching {
+				cmds = append(cmds, m.setStatus("push "+r.repo.Name+" skipped: network operation already running"))
+				continue
+			}
 			// Until status loads we don't know if there's a remote — skip rather
 			// than push blind (a local-only repo would fail "No configured push
 			// destination"), mirroring the s handler.
@@ -1048,7 +1122,7 @@ func (m Model) handleSingleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				})
 				continue
 			}
-			cmds = append(cmds, pushCmd(m.sem, r.repo.Path))
+			cmds = append(cmds, m.startPush(r))
 		}
 		return m, tea.Batch(cmds...)
 	case "d":

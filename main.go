@@ -105,13 +105,15 @@ Flags:
 
 	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithReportFocus()}
 	if cfg.MouseEnabled() {
-		// Cell motion, not all motion: clicks and the wheel are all we read, and
-		// all-motion sends an event for every cell the pointer crosses.
+		// Cell motion reports clicks and the wheel without every pointer move.
 		opts = append(opts, tea.WithMouseCellMotion())
 	}
-	p := tea.NewProgram(tui.New(cfg, scanRoot, repos, scripts), opts...)
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	model := tui.New(cfg, scanRoot, repos, scripts)
+	p := tea.NewProgram(model, opts...)
+	_, runErr := p.Run()
+	model.Close()
+	if runErr != nil {
+		fmt.Fprintln(os.Stderr, runErr)
 		showNotice(updateNotice)
 		os.Exit(1)
 	}

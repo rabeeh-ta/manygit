@@ -4,6 +4,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // fingerprintPaths are the paths inside .git whose mtime moves when git changes
@@ -130,6 +132,10 @@ type RepoStatus struct {
 func run(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	return runCommand(cmd, args...)
+}
+
+func runCommand(cmd *exec.Cmd, args ...string) (string, error) {
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
@@ -137,6 +143,30 @@ func run(dir string, args ...string) (string, error) {
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
 	}
 	return strings.TrimRight(out.String(), "\n"), nil
+}
+
+// NetworkCommand builds a Git network operation. Prompt restrictions are local
+// to this subprocess; saved credentials and the user's SSH configuration remain
+// available. GCM_INTERACTIVE controls GCM's GUI as well as its terminal prompts.
+// Other credential helpers may have their own interaction settings.
+func NetworkCommand(ctx context.Context, dir string, interactive bool, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	cmd.WaitDelay = 2 * time.Second
+	if !interactive {
+		// Git tries askpass before checking GIT_TERMINAL_PROMPT. An empty
+		// GIT_ASKPASS also prevents fallback to core.askPass or SSH_ASKPASS
+		// for Git's HTTPS prompts, without changing SSH's own configuration.
+		cmd.Env = append(os.Environ(), "GCM_INTERACTIVE=0", "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
+	}
+	return cmd
+}
+
+func runNetwork(dir string, args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	_, err := runCommand(NetworkCommand(ctx, dir, false, args...), args...)
+	return err
 }
 
 func branchExists(dir, branch string) bool {
@@ -267,21 +297,18 @@ func Run(dir string, args ...string) (string, error) {
 }
 
 func Fetch(dir string) error {
-	_, err := run(dir, "fetch", "--quiet")
-	return err
+	return runNetwork(dir, "fetch", "--quiet")
 }
 
 // PullFFOnly fast-forwards the current branch to its upstream. It never merges
 // or rebases; a non-fast-forward returns an error and changes nothing.
 func PullFFOnly(dir string) error {
-	_, err := run(dir, "pull", "--ff-only", "--quiet")
-	return err
+	return runNetwork(dir, "pull", "--ff-only", "--quiet")
 }
 
 // Push pushes the current branch to its upstream. Never uses --force.
 func Push(dir string) error {
-	_, err := run(dir, "push", "--quiet")
-	return err
+	return runNetwork(dir, "push", "--quiet")
 }
 
 // DiscardTracked hard-resets tracked files to HEAD, reverting all modified and

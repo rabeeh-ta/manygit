@@ -111,6 +111,9 @@ func syncGlyph(r *repoVM, unicode bool) string {
 	if r.fetching {
 		return styleDim.Render("~")
 	}
+	if r.networkErr != nil || r.fetchErr != nil {
+		return styleRed.Render("!")
+	}
 	up, down := "+", "-"
 	if unicode {
 		up, down = "↑", "↓"
@@ -224,7 +227,7 @@ func (m Model) visibleRepos() []*repoVM {
 // sync with its upstream (ahead/behind) — something to commit, pull, or push.
 func needsAttention(r *repoVM) bool {
 	st := r.status
-	return st.DirtyCount > 0 || st.Ahead > 0 || st.Behind > 0
+	return r.networkErr != nil || r.fetchErr != nil || st.DirtyCount > 0 || st.Ahead > 0 || st.Behind > 0
 }
 
 // currentVisible is the highlighted repo within the visible slice.
@@ -878,6 +881,15 @@ func (m Model) statusOrFilterLine() string {
 	if m.statusLine != "" {
 		return m.statusLine
 	}
+	if r := m.currentVisible(m.visibleRepos()); r != nil {
+		err := r.networkErr
+		if err == nil {
+			err = r.fetchErr
+		}
+		if err != nil {
+			return "f retry login | e details | " + styleRed.Render("network failed: "+err.Error())
+		}
+	}
 	return m.footer()
 }
 
@@ -1334,11 +1346,11 @@ func (m Model) keysColumns() (leftCol, rightCol []string) {
 		styleGroup.Render("Actions") + styleDim.Render(" on the > repo"),
 		kr("s", "sync (fetch + pull --ff-only)"),
 		kr("p", "push"),
-		kr("f/r", "fetch current / refetch all"),
+		kr("f/r", "fetch (retry login) / refetch all"),
 		kr("b/enter", "checkout selected branch"),
 		kr("d/D", "discard changes / +untracked (confirm)"),
 		kr("o", "open the repo in your editor"),
-		"",
+		kr("e", "show network error in Output"),
 		styleGroup.Render("This screen"),
 		kr("?", "open / close this overlay"),
 		kr("tab / [ ]", "keys <-> settings"),

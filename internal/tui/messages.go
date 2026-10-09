@@ -22,11 +22,14 @@ type statusMsg struct {
 }
 
 type fetchDoneMsg struct {
-	path string
-	err  error
+	path        string
+	err         error
+	id          uint64
+	interactive bool
 }
 
 type syncDoneMsg struct {
+	id      uint64
 	path    string
 	skipped bool
 	reason  string
@@ -34,6 +37,7 @@ type syncDoneMsg struct {
 }
 
 type pushDoneMsg struct {
+	id      uint64
 	path    string
 	skipped bool
 	reason  string
